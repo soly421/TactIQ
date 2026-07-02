@@ -4,7 +4,7 @@ services:
   - type: web
     name: tactiq
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: ANTHROPIC_API_KEY
