@@ -1,15 +1,31 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getClient, hasApiKey, requestExtras } from "./anthropic.js";
-import { getSeason, getSquad, getUserClub } from "./store.js";
+import { feedbackDigest, getSeason, getSquad, getUserClub } from "./store.js";
+
+// The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
+function preferenceBlock(userId: number): string {
+  const fb = feedbackDigest(userId);
+  if (fb.length === 0) return "";
+  const label = (f: { kind: string; title: string | null; note: string }) =>
+    `  - ${f.kind}${f.title ? `: "${f.title}"` : ""}${f.note ? ` — coach's note: "${f.note}"` : ""}`;
+  const liked = fb.filter((f) => f.vote === 1).map(label).join("\n");
+  const disliked = fb.filter((f) => f.vote === -1).map(label).join("\n");
+  return `
+<coach_preferences>
+This coach has rated past TactIQ outputs. Learn from it — lean into what earned a thumbs-up, and do NOT repeat what earned a thumbs-down (their notes explain why):
+${liked ? `Liked:\n${liked}` : ""}${liked && disliked ? "\n" : ""}${disliked ? `Disliked:\n${disliked}` : ""}
+</coach_preferences>`;
+}
 
 export function teamContext(userId: number): string {
   const squad = getSquad(userId);
   const club = getUserClub(userId);
+  const prefBlock = preferenceBlock(userId);
   const clubBlock = club?.philosophy
     ? `\n<club_philosophy>\nThis coach's club (${club.name}) has a club-wide coaching philosophy set by its director. Align advice with it:\n${club.philosophy}\n</club_philosophy>`
     : "";
-  if (!squad) return `${clubBlock}\n<team_memory>\nThe coach has not set up a team profile yet. If relevant, suggest they add their squad in the My Team tab so advice can be personalized.\n</team_memory>`;
+  if (!squad) return `${clubBlock}${prefBlock}\n<team_memory>\nThe coach has not set up a team profile yet. If relevant, suggest they add their squad in the My Team tab so advice can be personalized.\n</team_memory>`;
   const s = squad;
   const roster = (squad.players ?? [])
     .filter((p) => p.name)
@@ -30,7 +46,7 @@ ${roster ? `- Roster (use these actual players by name in advice, lineups, and d
 
 Recent season activity (their training/tactical history — build on it, reference it, avoid repeating themes back-to-back):
 ${recent || "- nothing yet, this is early in the season"}
-</team_memory>${clubBlock}`;
+</team_memory>${clubBlock}${prefBlock}`;
 }
 
 interface StreamArgs {

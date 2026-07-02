@@ -250,6 +250,25 @@ export function addFeedback(userId: number, f: { entryId?: number | null; kind: 
   );
 }
 
+export interface FeedbackDigestRow {
+  kind: string;
+  vote: number;
+  note: string;
+  title: string | null;
+}
+
+// Recent ratings joined to the rated outputs — powers the personalization loop:
+// what this coach liked/disliked flows back into every future prompt.
+export function feedbackDigest(userId: number, limit = 12): FeedbackDigestRow[] {
+  return db
+    .prepare(
+      `SELECT f.kind, f.vote, f.note, s.title
+       FROM feedback f LEFT JOIN season_entries s ON s.id = f.entry_id
+       WHERE f.user_id = ? ORDER BY f.id DESC LIMIT ?`,
+    )
+    .all(userId, limit) as FeedbackDigestRow[];
+}
+
 export function feedbackCount(userId: number): number {
   const row = db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE user_id = ?").get(userId) as { n: number };
   return row.n;
