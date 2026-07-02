@@ -20,6 +20,8 @@ export interface SquadProfile {
   preferredStyle: string;
   rosterNotes: string;
   seasonGoals: string;
+  nextOpponent?: string;
+  nextGameDate?: string; // ISO date (YYYY-MM-DD)
 }
 
 export interface SeasonEntry {

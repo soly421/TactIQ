@@ -56,6 +56,7 @@ This coach's team (use it — make every answer specific to THIS team):
 - Preferred style: ${s.preferredStyle || "not specified"}
 - Roster notes: ${s.rosterNotes || "none"}
 - Season goals: ${s.seasonGoals || "none"}
+- Next match: ${s.nextOpponent ? `vs ${s.nextOpponent}${s.nextGameDate ? ` on ${s.nextGameDate}` : ""} — factor this opponent into training priorities and match prep` : "not scheduled"}
 ${roster ? `- Roster (use these actual players by name in advice, lineups, and development notes):\n${roster}` : "- Roster: not entered"}
 
 Season-long memory (everything this coach has done in TactIQ — use it):

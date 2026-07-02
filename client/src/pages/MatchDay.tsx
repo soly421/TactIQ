@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { sendJSON, streamSSE } from "../api";
+import { getJSON, sendJSON, streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
 import { RateBar } from "../components/RateBar";
-import type { AwardResult, ChatMessage, GamePlan } from "../types";
+import type { AwardResult, ChatMessage, GamePlan, SeasonEntry, SquadProfile } from "../types";
 
 const SEGMENTS = [
   { id: "pre", label: "🗒️ Pre-Game" },
@@ -11,8 +11,28 @@ const SEGMENTS = [
   { id: "post", label: "🎬 Post-Game" },
 ];
 
+// Strip stored-markdown noise for display in memory rows.
+const clean = (s: string) => s.replace(/#+\s?/g, "").replace(/\s+/g, " ").trim();
+
 export function MatchDay() {
   const [seg, setSeg] = useState("pre");
+  const [squad, setSquad] = useState<SquadProfile | null>(null);
+  const [gameMemory, setGameMemory] = useState<SeasonEntry[]>([]);
+
+  useEffect(() => {
+    void getJSON<{ squad: SquadProfile | null }>("/api/team").then((r) => setSquad(r.squad)).catch(() => {});
+    void getJSON<{ season: SeasonEntry[] }>("/api/season")
+      .then((r) => setGameMemory(r.season.filter((e) => e.kind === "match").slice(0, 3)))
+      .catch(() => {});
+  }, []);
+
+  const countdown = (() => {
+    if (!squad?.nextGameDate) return null;
+    const days = Math.ceil((new Date(squad.nextGameDate).getTime() - Date.now()) / 86400000);
+    if (days < 0) return null;
+    return days === 0 ? "TODAY" : days === 1 ? "tomorrow" : `in ${days} days`;
+  })();
+
   return (
     <div className="fade-in">
       <h1>Match Day</h1>
@@ -20,6 +40,16 @@ export function MatchDay() {
         Your professional staff for game day: the briefing before, the bench voice during, and the analyst's debrief after —
         including your Veo / Trace / Wyscout data.
       </p>
+      {squad?.nextOpponent && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "var(--accent)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <b>Next match: vs {squad.nextOpponent}</b>
+            {countdown && <span style={{ color: "var(--accent)", fontWeight: 700 }}> — {countdown}</span>}
+            {squad.nextGameDate && <span className="muted small"> ({squad.nextGameDate})</span>}
+          </div>
+          <span className="muted small">Opponent pre-filled below · set in My Team</span>
+        </div>
+      )}
       <div className="tabs" style={{ marginBottom: 18, maxWidth: 480 }}>
         {SEGMENTS.map((s) => (
           <button key={s.id} className={`tab ${seg === s.id ? "active" : ""}`} onClick={() => setSeg(s.id)}>
@@ -27,16 +57,34 @@ export function MatchDay() {
           </button>
         ))}
       </div>
-      {seg === "pre" && <PreGame />}
+      {seg === "pre" && <PreGame defaultOpponent={squad?.nextOpponent ?? ""} />}
       {seg === "live" && <LiveBench />}
       {seg === "post" && <PostGame />}
+      {gameMemory.length > 0 && (
+        <div className="card" style={{ marginTop: 18 }}>
+          <h3 style={{ marginTop: 0 }}>🧠 Recent game memory</h3>
+          {gameMemory.map((e) => (
+            <div key={e.id} className="season-row">
+              <span className="kind">📣</span>
+              <div>
+                <div className="title">{e.title}</div>
+                <div className="muted small">{clean(e.summary).slice(0, 140)}</div>
+              </div>
+              <span className="when">{new Date(e.date).toLocaleDateString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function PreGame() {
+function PreGame({ defaultOpponent }: { defaultOpponent: string }) {
   const { celebrate } = useGamify();
   const [form, setForm] = useState({ opponent: "", competition: "", opponentNotes: "", ourLineupThoughts: "", conditions: "" });
+  useEffect(() => {
+    if (defaultOpponent) setForm((f) => (f.opponent ? f : { ...f, opponent: defaultOpponent }));
+  }, [defaultOpponent]);
   const [planData, setPlanData] = useState<GamePlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

@@ -140,6 +140,8 @@ export interface SquadProfile {
   preferredStyle: string;
   rosterNotes: string;
   seasonGoals: string;
+  nextOpponent?: string;
+  nextGameDate?: string;
 }
 
 export interface SeasonEntry {

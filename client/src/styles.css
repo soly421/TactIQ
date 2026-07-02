@@ -52,7 +52,7 @@ body::before {
 .sidebar .spacer { flex: 1; }
 .sidebar .user-box { border-top: 1px solid var(--border); padding: 12px 10px 2px; font-size: 13px; }
 .sidebar .user-box .uname { font-weight: 700; }
-.sidebar .signout { color: var(--muted); background: none; border: none; cursor: pointer; padding: 4px 0; font-size: 12.5px; font-family: inherit; }
+.sidebar .signout { display: block; color: var(--muted); background: none; border: none; cursor: pointer; padding: 4px 0; margin-top: 2px; font-size: 12.5px; font-family: inherit; text-align: left; }
 .sidebar .signout:hover { color: var(--red); }
 
 .content { flex: 1; min-width: 0; padding: 0 28px 80px; }

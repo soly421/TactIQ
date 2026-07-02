@@ -678,6 +678,8 @@ api.put("/team", (req, res) => {
     preferredStyle: s.preferredStyle || "",
     rosterNotes: s.rosterNotes || "",
     seasonGoals: s.seasonGoals || "",
+    nextOpponent: String(s.nextOpponent ?? "").slice(0, 80),
+    nextGameDate: String(s.nextGameDate ?? "").slice(0, 10),
     players: (Array.isArray(s.players) ? s.players : []).slice(0, 30).map((p) => ({
       name: String(p?.name ?? "").slice(0, 60),
       number: String(p?.number ?? "").slice(0, 4),

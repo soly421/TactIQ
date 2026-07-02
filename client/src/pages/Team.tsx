@@ -111,10 +111,20 @@ export function Team() {
           Team notes
           <textarea value={squad.rosterNotes} rows={2} onChange={(e) => set("rosterNotes", e.target.value)} placeholder="Team-level strengths/weaknesses, attendance patterns, keeper situation…" />
         </label>
-        <label className="field">
+        <label className="field" style={{ marginBottom: 12 }}>
           Season goals
           <textarea value={squad.seasonGoals} rows={2} onChange={(e) => set("seasonGoals", e.target.value)} placeholder="e.g. Every player confident receiving under pressure by spring" />
         </label>
+        <div className="form-grid">
+          <label className="field">
+            Next opponent
+            <input value={squad.nextOpponent ?? ""} onChange={(e) => set("nextOpponent", e.target.value)} placeholder="e.g. Rapids FC 2015" />
+          </label>
+          <label className="field">
+            Next game date
+            <input type="date" value={squad.nextGameDate ?? ""} onChange={(e) => set("nextGameDate", e.target.value)} />
+          </label>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
