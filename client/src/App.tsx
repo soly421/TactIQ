@@ -15,7 +15,7 @@ import type { Settings, User } from "./types";
 
 const NAV = [
   { id: "home", label: "Home", emoji: "🏠" },
-  { id: "chat", label: "Coach T", emoji: "💬" },
+  { id: "chat", label: "Ask Coach Sam", emoji: "💬" },
   { id: "advisors", label: "Advisors", emoji: "🧠" },
   { id: "library", label: "Library", emoji: "📚" },
   { id: "studio", label: "The Labs", emoji: "🔬" },

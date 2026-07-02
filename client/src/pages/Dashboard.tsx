@@ -4,7 +4,7 @@ import { useGamify } from "../components/Gamify";
 import { XpChart } from "../components/XpChart";
 import type { SeasonEntry, SquadProfile } from "../types";
 
-const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬" };
+const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬", match: "📣", film: "🎬" };
 
 export function Dashboard({ go }: { go: (tab: string) => void }) {
   const { progress } = useGamify();
@@ -43,7 +43,7 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
       <div className="action-row">
         <button className="action-tile" onClick={() => go("chat")}>
           <span className="action-emoji">💬</span>
-          <b>Ask Coach T</b>
+          <b>Ask Coach Sam</b>
           <span className="muted small">Your assistant coach</span>
         </button>
         <button className="action-tile" onClick={() => go("studio")}>

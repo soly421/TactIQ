@@ -145,7 +145,7 @@ export interface SquadProfile {
 export interface SeasonEntry {
   id: string;
   date: string;
-  kind: "session" | "formation" | "guidance" | "chat";
+  kind: "session" | "formation" | "guidance" | "chat" | "match" | "film";
   title: string;
   summary: string;
   payload?: unknown;

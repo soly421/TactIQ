@@ -18,9 +18,13 @@ import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js"
 import { questState } from "./quests.js";
 import { engineFor, hasApiKey, type Plan } from "./anthropic.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
+
 import { requireAuth, type AuthedRequest } from "./auth.js";
 
 export const api = Router();
+
+// Flatten whitespace so stored memory summaries stay single-line.
+const snip = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n);
 
 const PRO_DAILY_MESSAGES = 300;
 
@@ -130,12 +134,12 @@ api.post("/chat", async (req, res) => {
     maxTokens: 6000,
     mockText: MOCK_CHAT_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
-    onDone: () => {
+    onDone: (fullText) => {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       addSeasonEntry(userId, {
         kind: "chat",
         title: `Brainstorm with ${advisorName}`,
-        summary: (lastUser?.content ?? "").slice(0, 120),
+        summary: `Coach asked: "${snip(lastUser?.content ?? "", 110)}" — ${advisorName} advised: ${snip(fullText, 180)}`,
       });
     },
   });
@@ -170,9 +174,13 @@ api.post("/assistant", async (req, res) => {
     maxTokens: 6000,
     mockText: MOCK_CHAT_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
-    onDone: () => {
+    onDone: (fullText) => {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
-      addSeasonEntry(userId, { kind: "chat", title: "Chat with Coach T", summary: (lastUser?.content ?? "").slice(0, 120) });
+      addSeasonEntry(userId, {
+        kind: "chat",
+        title: "Chat with Coach Sam",
+        summary: `Coach asked: "${snip(lastUser?.content ?? "", 110)}" — advised: ${snip(fullText, 180)}`,
+      });
     },
   });
 });
@@ -204,7 +212,12 @@ You design world-class youth training sessions. Every drill must include a rende
     });
 
     const gamify = award(userId, "session");
-    const entryId = addSeasonEntry(userId, { kind: "session", title: plan_.title, summary: `${plan_.ageGroup} · ${plan_.theme}`, payload: plan_ });
+    const entryId = addSeasonEntry(userId, {
+      kind: "session",
+      title: plan_.title,
+      summary: `${plan_.ageGroup} · ${plan_.theme} · exercises: ${plan_.drills.map((d) => d.name).join(", ").slice(0, 160)}`,
+      payload: plan_,
+    });
     res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
@@ -407,8 +420,12 @@ You are answering a structured coaching question. Respond in clean markdown with
     maxTokens: 6000,
     mockText: MOCK_GUIDANCE,
     doneExtra: { award: gamify, remaining: quota.remaining },
-    onDone: () => {
-      addSeasonEntry(userId, { kind: "guidance", title: topic || "Tactical guidance", summary: String(question).slice(0, 120) });
+    onDone: (fullText) => {
+      addSeasonEntry(userId, {
+        kind: "guidance",
+        title: topic || "Tactical guidance",
+        summary: `Problem: "${snip(String(question), 110)}" — advice given: ${snip(fullText, 180)}`,
+      });
     },
   });
 });
@@ -438,7 +455,12 @@ You are the coach's professional assistant coach preparing a match briefing — 
       mock: MOCK_GAME_PLAN,
     });
     const gamify = award(userId, "matchday");
-    const entryId = addSeasonEntry(userId, { kind: "guidance", title: `Game plan: ${gamePlan.matchTitle}`, summary: gamePlan.keysToTheGame[0] ?? "", payload: gamePlan });
+    const entryId = addSeasonEntry(userId, {
+      kind: "match",
+      title: `Game plan vs ${opponent}`,
+      summary: `${competition || "league game"} — key: ${gamePlan.keysToTheGame[0] ?? ""}${opponentNotes ? ` | opponent intel: ${String(opponentNotes).slice(0, 100)}` : ""}`,
+      payload: gamePlan,
+    });
     res.json({ gamePlan, award: gamify, entryId });
   } catch (err) {
     console.error(err);
@@ -472,6 +494,14 @@ LIVE MATCH MODE. The coach is ON THE SIDELINE mid-game and reading on a phone. R
     maxTokens: 1500,
     mockText: MOCK_LIVE_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
+    onDone: (fullText) => {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      addSeasonEntry(userId, {
+        kind: "match",
+        title: "Live bench — in-game situation",
+        summary: `Sideline report: "${snip(lastUser?.content ?? "", 110)}" — adjustment: ${snip(fullText, 160)}`,
+      });
+    },
   });
 });
 
@@ -510,8 +540,12 @@ POST-GAME DEBRIEF MODE. You are the analyst on the coach's staff producing the a
     maxTokens: 6000,
     mockText: MOCK_DEBRIEF,
     doneExtra: { award: gamify, remaining: quota.remaining },
-    onDone: () => {
-      addSeasonEntry(userId, { kind: "guidance", title: `Post-game debrief${result ? `: ${result}` : ""}`, summary: String(story || statsPaste || "").slice(0, 120) });
+    onDone: (fullText) => {
+      addSeasonEntry(userId, {
+        kind: "match",
+        title: `Post-game debrief${result ? `: ${result}` : ""}`,
+        summary: `Coach's account: "${snip(String(story || statsPaste || ""), 110)}" — takeaways: ${snip(fullText, 180)}`,
+      });
     },
   });
 });
@@ -574,8 +608,12 @@ FILM ROOM MODE. You are the video analyst on the coach's staff. The coach upload
     maxTokens: 6000,
     mockText: MOCK_FILM,
     doneExtra: { award: gamify, remaining: quota.remaining },
-    onDone: () => {
-      addSeasonEntry(userId, { kind: "guidance", title: "Film Room breakdown", summary: (context ?? "video clip analysis").slice(0, 120) });
+    onDone: (fullText) => {
+      addSeasonEntry(userId, {
+        kind: "film",
+        title: "Film Room breakdown",
+        summary: `Clip: "${snip(context ?? "video clip analysis", 100)}" — analysis found: ${snip(fullText, 180)}`,
+      });
     },
   });
 });
@@ -601,6 +639,13 @@ api.put("/team", (req, res) => {
     preferredStyle: s.preferredStyle || "",
     rosterNotes: s.rosterNotes || "",
     seasonGoals: s.seasonGoals || "",
+    players: (Array.isArray(s.players) ? s.players : []).slice(0, 30).map((p) => ({
+      name: String(p?.name ?? "").slice(0, 60),
+      number: String(p?.number ?? "").slice(0, 4),
+      positions: String(p?.positions ?? "").slice(0, 40),
+      foot: String(p?.foot ?? "").slice(0, 10),
+      notes: String(p?.notes ?? "").slice(0, 300),
+    })),
   };
   saveSquad(userId, squad);
   const gamify = award(userId, "squad");

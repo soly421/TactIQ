@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Coach T (Chat)** — your always-available assistant coach, front and center. Ask anything; attach a photo of a whiteboard, lineup, or stats screen and it reads it.
+- **Ask Coach Sam (Chat)** — your always-available assistant coach, front and center. Ask anything; attach a photo of a whiteboard, lineup, or stats screen and it reads it.
 - **The Advisor Room** — 24 built-in advisors, each a distinct coaching-style archetype (park-the-bus, gegenpress, positional play, wing-and-cross, direct play…) with a "Good for" fit guide and format badges (7v7/9v9 Zone 1 · 11v11 Zone 2 · HS). Plus **Build Your Own Advisor**: describe a coaching mind and chat with it forever.
 - **The Library** — session templates across 8 schools of thought (Spanish positional, Dutch total football, German pressing, Italian defensive craft, South American street/futsal, English direct, French athletic development, US pathway), filterable by format/zone. Unlock any template and TactIQ builds the full visualized session adapted to your team. Advisors reference the Library in their advice.
 - **The Labs** — Session Studio (animated SVG drill diagrams, optional school-of-thought flavor), Formation Lab (interactive pitch + full game model), and the Playbook (Picture → Fix → Train It → Say This To Your Players).

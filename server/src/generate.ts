@@ -31,8 +31,22 @@ export function teamContext(userId: number): string {
     .filter((p) => p.name)
     .map((p) => `  - ${p.name}${p.number ? ` (#${p.number})` : ""} | positions: ${p.positions || "?"} | foot: ${p.foot || "?"} | ${p.notes || ""}`)
     .join("\n");
-  const recent = getSeason(userId, 8)
-    .map((e) => `- [${e.date.slice(0, 10)}] ${e.kind}: ${e.title} — ${e.summary}`)
+  // Structured season memory: per-category windows so a burst of chats can't
+  // push game history or training history out of the context.
+  const all = getSeason(userId, 60);
+  const line = (e: { date: string; title: string; summary: string }) => `  - [${e.date.slice(0, 10)}] ${e.title} — ${e.summary}`;
+  const take = (kinds: string[], n: number) => all.filter((e) => kinds.includes(e.kind)).slice(0, n).map(line).join("\n");
+  const matches = take(["match"], 5);
+  const sessions = take(["session"], 6);
+  const labs = take(["formation", "film"], 4);
+  const talks = take(["chat", "guidance"], 6);
+  const recent = [
+    matches && `Game memory (game plans, live-bench moments, post-game debriefs — reference results and carry forward what was learned):\n${matches}`,
+    sessions && `Training memory (sessions designed for this team — build progressions on these, avoid repeating the same theme back-to-back):\n${sessions}`,
+    labs && `Lab memory (formations analyzed and film breakdowns — stay consistent with the established game model unless the coach changes direction):\n${labs}`,
+    talks && `Conversation memory (recent brainstorms and guidance, including what was advised — don't contradict or re-explain prior advice; build on it):\n${talks}`,
+  ]
+    .filter(Boolean)
     .join("\n");
   return `
 <team_memory>
@@ -44,7 +58,7 @@ This coach's team (use it — make every answer specific to THIS team):
 - Season goals: ${s.seasonGoals || "none"}
 ${roster ? `- Roster (use these actual players by name in advice, lineups, and development notes):\n${roster}` : "- Roster: not entered"}
 
-Recent season activity (their training/tactical history — build on it, reference it, avoid repeating themes back-to-back):
+Season-long memory (everything this coach has done in TactIQ — use it):
 ${recent || "- nothing yet, this is early in the season"}
 </team_memory>${clubBlock}${prefBlock}`;
 }

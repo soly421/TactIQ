@@ -74,7 +74,7 @@ export function Chat() {
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
         <div className="coach-avatar">🧡</div>
         <div>
-          <h1 style={{ margin: 0, fontSize: 24 }}>Coach T</h1>
+          <h1 style={{ margin: 0, fontSize: 24 }}>Ask Coach Sam</h1>
           <span className="muted small">Your assistant coach. Tactics, sessions, players, parents — ask anything. Snap a whiteboard or lineup and I'll read it.</span>
         </div>
       </div>
