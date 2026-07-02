@@ -26,6 +26,12 @@ export function SessionStudio() {
 
   useEffect(() => {
     void getJSON<{ schools: School[] }>("/api/library").then((r) => setSchools(r.schools)).catch(() => {});
+    // "Train this next" hand-off from the home page.
+    const prefill = sessionStorage.getItem("tactiq:prefillTheme");
+    if (prefill) {
+      sessionStorage.removeItem("tactiq:prefillTheme");
+      setForm((f) => ({ ...f, theme: prefill }));
+    }
   }, []);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));

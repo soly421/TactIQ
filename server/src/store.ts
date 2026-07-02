@@ -22,6 +22,7 @@ export interface SquadProfile {
   seasonGoals: string;
   nextOpponent?: string;
   nextGameDate?: string; // ISO date (YYYY-MM-DD)
+  icsUrl?: string; // team calendar subscription (TeamSnap/SportsEngine/GotSport export)
 }
 
 export interface SeasonEntry {
@@ -317,6 +318,59 @@ export function clubReport(clubId: number, days = 30): {
     { sessions: 0, matchdays: 0, conversations: 0, film: 0, ratings: 0 },
   );
   return { coaches, totals };
+}
+
+// ---- schedule (imported + manual games/practices) ----
+export interface ScheduleEvent {
+  id: number;
+  start: string; // ISO datetime
+  title: string;
+  kind: "game" | "practice" | "other";
+  opponent: string;
+  location: string;
+  source: string; // ics | teamsnap | manual
+}
+
+export function replaceScheduleEvents(userId: number, source: string, events: Omit<ScheduleEvent, "id" | "source">[]): number {
+  const del = db.prepare("DELETE FROM schedule_events WHERE user_id = ? AND source = ?");
+  const ins = db.prepare(
+    "INSERT OR REPLACE INTO schedule_events (user_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  );
+  const tx = db.transaction(() => {
+    del.run(userId, source);
+    for (const e of events) ins.run(userId, e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120), source);
+  });
+  tx();
+  return events.length;
+}
+
+export function addScheduleEvent(userId: number, e: Omit<ScheduleEvent, "id" | "source">): void {
+  db.prepare(
+    "INSERT OR REPLACE INTO schedule_events (user_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, 'manual')",
+  ).run(userId, e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120));
+}
+
+export function deleteScheduleEvent(userId: number, id: number): void {
+  db.prepare("DELETE FROM schedule_events WHERE user_id = ? AND id = ?").run(userId, id);
+}
+
+export function upcomingEvents(userId: number, days = 14): ScheduleEvent[] {
+  return db
+    .prepare(
+      `SELECT id, start, title, kind, opponent, location, source FROM schedule_events
+       WHERE user_id = ? AND start >= datetime('now', '-6 hours') AND start <= datetime('now', '+' || ? || ' days')
+       ORDER BY start ASC LIMIT 40`,
+    )
+    .all(userId, days) as ScheduleEvent[];
+}
+
+export function setTeamSnapToken(userId: number, token: string | null): void {
+  db.prepare("UPDATE users SET teamsnap_token = ? WHERE id = ?").run(token, userId);
+}
+
+export function getTeamSnapToken(userId: number): string | null {
+  const row = db.prepare("SELECT teamsnap_token FROM users WHERE id = ?").get(userId) as { teamsnap_token: string | null } | undefined;
+  return row?.teamsnap_token ?? null;
 }
 
 // ---- kv (scheduler state) ----

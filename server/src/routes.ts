@@ -4,6 +4,7 @@ import { ADVISORS, advisorSystemPrompt, assistantSystemPrompt, customAdvisorSyst
 import { baseSystemPrompt } from "./knowledge.js";
 import { SESSION_PLAN_SCHEMA, FORMATION_ANALYSIS_SCHEMA, GAME_PLAN_SCHEMA, SEASON_PLAN_SCHEMA } from "./schemas.js";
 import { generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
+import { streamText } from "./providers.js";
 import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
@@ -11,13 +12,14 @@ import {
 import {
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  addFeedback, feedbackCount, incrementUsage, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, tokensToday, xpAtStartOfToday,
+  addFeedback, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
 import { questState } from "./quests.js";
 import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
 import { stripeConfigured } from "./billing.js";
+import { maybeResyncIcs } from "./schedule.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
 
 import { requireAuth, type AuthedRequest } from "./auth.js";
@@ -680,6 +682,7 @@ api.put("/team", (req, res) => {
     seasonGoals: s.seasonGoals || "",
     nextOpponent: String(s.nextOpponent ?? "").slice(0, 80),
     nextGameDate: String(s.nextGameDate ?? "").slice(0, 10),
+    icsUrl: String(s.icsUrl ?? "").slice(0, 500),
     players: (Array.isArray(s.players) ? s.players : []).slice(0, 30).map((p) => ({
       name: String(p?.name ?? "").slice(0, 60),
       number: String(p?.number ?? "").slice(0, 4),
@@ -732,6 +735,131 @@ api.put("/settings/plan", (req, res) => {
   setPlanTier(userId, newPlan);
   res.json(settingsPayload(userId));
 });
+
+// ---- Home: the assistant coach's desk, aggregated ----
+
+const PHASE_KEYWORDS: [string, RegExp][] = [
+  ["defending", /defend|set piece|corner|block|compact|press(?:ure|ing)? ?(?:cover|triggers)|1v1 defending|marking/i],
+  ["possession", /rondo|possession|build|passing|out of the back|switch|keep-?away/i],
+  ["attacking", /finish|attack|cross|shoot|combination|striker|final third|1v1 attacking|dribbl/i],
+  ["transition", /transition|counter|press(?:ing)?\b/i],
+  ["technical", /ball mastery|first touch|technical|turns|skills|weak foot|scanning/i],
+];
+
+function classifyTheme(text: string): string {
+  for (const [phase, re] of PHASE_KEYWORDS) if (re.test(text)) return phase;
+  return "technical";
+}
+
+function parseRecord(entries: { title: string }[]): { w: number; d: number; l: number; gf: number; ga: number; form: string[] } {
+  const rec = { w: 0, d: 0, l: 0, gf: 0, ga: 0, form: [] as string[] };
+  for (const e of entries) {
+    if (!e.title.startsWith("Post-game debrief")) continue;
+    const m = /(\d+)\s*[-–]\s*(\d+)\s*(W|L|D|T)?/i.exec(e.title);
+    if (!m) continue;
+    const [, a, b, letterRaw] = m;
+    const letter = (letterRaw ?? (Number(a) > Number(b) ? "W" : Number(a) < Number(b) ? "L" : "D")).toUpperCase().replace("T", "D");
+    if (letter === "W") rec.w += 1;
+    else if (letter === "L") rec.l += 1;
+    else rec.d += 1;
+    rec.gf += Number(a);
+    rec.ga += Number(b);
+    if (rec.form.length < 5) rec.form.push(letter);
+  }
+  return rec;
+}
+
+function suggestTheme(lastStory: string, balance: Record<string, number>): { theme: string; reason: string } {
+  const s = lastStory.toLowerCase();
+  if (/corner|set piece|free kick/.test(s)) return { theme: "Defending Set Pieces", reason: "your last debrief flagged set pieces" };
+  if (/press|play(ing)? out|build|goal kick/.test(s)) return { theme: "Playing Out of the Back", reason: "your last debrief flagged build-up under pressure" };
+  if (/counter|caught|transition/.test(s)) return { theme: "Stopping Counters (Rest Defense)", reason: "your last debrief flagged transitions against" };
+  if (/finish|chance|couldn'?t score|missed/.test(s)) return { theme: "Finishing & Shooting", reason: "your last debrief flagged chance conversion" };
+  if (/conced|defend|leak/.test(s)) return { theme: "Compactness & Team Shape", reason: "your last debrief flagged defending" };
+  const phases = ["defending", "possession", "attacking", "transition", "technical"];
+  const least = phases.sort((a, b) => (balance[a] ?? 0) - (balance[b] ?? 0))[0];
+  const themeByPhase: Record<string, string> = {
+    defending: "1v1 Defending", possession: "Rondos & Keep-Away", attacking: "Finishing & Shooting",
+    transition: "Transition Games (Both Ways)", technical: "Ball Mastery & First Touch",
+  };
+  return { theme: themeByPhase[least], reason: `you haven't trained ${least} recently` };
+}
+
+api.get("/home", async (req, res) => {
+  const userId = uid(req);
+  await maybeResyncIcs(userId).catch(() => {});
+  const squad = getSquad(userId);
+  const season = getSeason(userId, 60);
+  const matches = season.filter((e) => e.kind === "match");
+  const record = parseRecord(matches);
+  const lastDebrief = matches.find((e) => e.title.startsWith("Post-game debrief")) ?? null;
+  const lastStoryMatch = lastDebrief ? /Coach's account: "([^"]*)"/.exec(lastDebrief.summary) : null;
+  const lastMatch = lastDebrief
+    ? { title: lastDebrief.title.replace("Post-game debrief: ", ""), story: lastStoryMatch?.[1] ?? "", date: lastDebrief.date }
+    : null;
+
+  const events = upcomingEvents(userId, 14);
+  const nextGameEvent = events.find((e) => e.kind === "game") ?? null;
+  const nextGame = nextGameEvent
+    ? { opponent: nextGameEvent.opponent || nextGameEvent.title, date: nextGameEvent.start, location: nextGameEvent.location }
+    : squad?.nextOpponent
+      ? { opponent: squad.nextOpponent, date: squad.nextGameDate || "", location: "" }
+      : null;
+
+  const recentSessions = season.filter((e) => e.kind === "session").slice(0, 6);
+  const balance: Record<string, number> = { defending: 0, possession: 0, attacking: 0, transition: 0, technical: 0 };
+  for (const s of recentSessions) balance[classifyTheme(`${s.title} ${s.summary}`)] += 1;
+
+  const suggestion = suggestTheme(lastMatch?.story ?? "", balance);
+
+  res.json({
+    squad,
+    record,
+    lastMatch,
+    nextGame,
+    week: events.filter((e) => new Date(e.start.replace(" ", "T")).getTime() < Date.now() + 7 * 86400000),
+    trainingBalance: balance,
+    sessionsLogged: recentSessions.length,
+    suggestion,
+    briefing: await dailyBriefing(userId, { record, lastMatch, nextGame, suggestion }),
+  });
+});
+
+// Coach Sam's written morning briefing: one cached light-tier call per day.
+async function dailyBriefing(
+  userId: number,
+  ctx: {
+    record: { w: number; d: number; l: number };
+    lastMatch: { title: string; story: string } | null;
+    nextGame: { opponent: string; date: string } | null;
+    suggestion: { theme: string; reason: string };
+  },
+): Promise<string> {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `brief:${userId}:${day}`;
+  const cached = kvGet(key);
+  if (cached) return cached;
+  let text: string;
+  if (!hasAnyProvider()) {
+    text = `Morning, coach. ${ctx.lastMatch ? `Last time out: ${ctx.lastMatch.title}${ctx.lastMatch.story ? ` — "${ctx.lastMatch.story}".` : "."}` : "No games logged yet — set up your team and log your first match day."} ${ctx.nextGame ? `Next up: ${ctx.nextGame.opponent}${ctx.nextGame.date ? ` on ${String(ctx.nextGame.date).slice(0, 10)}` : ""}.` : ""} I'd train ${ctx.suggestion.theme} this week — ${ctx.suggestion.reason}.`;
+  } else {
+    try {
+      const result = await streamText({
+        tier: "light",
+        userId,
+        system: `${baseSystemPrompt()}${teamContext(userId)}\n\nYou are Coach Sam writing the coach's short morning briefing for TactIQ's home page. 60-90 words, warm but specific, grounded ONLY in the team memory above. Structure: one line on the last game, one insight worth acting on, one recommendation for this week's training (name a Library exercise), one line on the next opponent if known. Plain text, no headers or lists.`,
+        messages: [{ role: "user", content: `Write today's briefing. Suggested focus: ${ctx.suggestion.theme} (${ctx.suggestion.reason}).` }],
+        maxTokens: 400,
+        onDelta: () => {},
+      });
+      text = result.text.trim();
+    } catch {
+      return "";
+    }
+  }
+  kvSet(key, text);
+  return text;
+}
 
 // ---- Gamified progress ----
 api.get("/progress", (req, res) => {

@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { hasAnyProvider, RefusalError, streamText, structuredText, TIER_INFO, type Tier } from "./providers.js";
-import { feedbackDigest, getSeason, getSquad, getUserClub } from "./store.js";
+import { feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
 
 // The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
 function preferenceBlock(userId: number): string {
@@ -57,6 +57,13 @@ This coach's team (use it — make every answer specific to THIS team):
 - Roster notes: ${s.rosterNotes || "none"}
 - Season goals: ${s.seasonGoals || "none"}
 - Next match: ${s.nextOpponent ? `vs ${s.nextOpponent}${s.nextGameDate ? ` on ${s.nextGameDate}` : ""} — factor this opponent into training priorities and match prep` : "not scheduled"}
+${(() => {
+    const sched = upcomingEvents(userId, 10).slice(0, 6);
+    if (sched.length === 0) return "";
+    return `- Upcoming schedule (imported from the team calendar — plan around it):\n${sched
+      .map((e) => `  - [${e.start.slice(0, 16)}] ${e.kind}${e.opponent ? ` vs ${e.opponent}` : `: ${e.title}`}${e.location ? ` @ ${e.location}` : ""}`)
+      .join("\n")}`;
+  })()}
 ${roster ? `- Roster (use these actual players by name in advice, lineups, and development notes):\n${roster}` : "- Roster: not entered"}
 
 Season-long memory (everything this coach has done in TactIQ — use it):

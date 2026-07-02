@@ -3,6 +3,93 @@ import { getJSON, sendJSON } from "../api";
 import { useGamify } from "../components/Gamify";
 import type { AwardResult, PlayerNote, SquadProfile } from "../types";
 
+interface ScheduleInfo {
+  events: { id: number; start: string; title: string; kind: string; opponent: string; location: string; source: string }[];
+  icsUrl: string;
+  teamsnap: { configured: boolean; connected: boolean };
+}
+
+// Schedule import: ICS calendar link (works with TeamSnap, SportsEngine,
+// GotSport, Playmetrics exports) + optional TeamSnap OAuth.
+function ScheduleCard() {
+  const [info, setInfo] = useState<ScheduleInfo | null>(null);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void getJSON<ScheduleInfo>("/api/schedule").then((r) => {
+      setInfo(r);
+      setUrl(r.icsUrl);
+    }).catch(() => {});
+  }, []);
+
+  async function saveIcs() {
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const r = await sendJSON<{ imported: number; events: ScheduleInfo["events"] }>("/api/schedule/ics", { url });
+      setInfo((i) => (i ? { ...i, events: r.events, icsUrl: url } : i));
+      setMsg(`Imported ${r.imported} events — games and practices detected automatically.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    }
+    setBusy(false);
+  }
+
+  async function connectTeamSnap() {
+    setError("");
+    try {
+      const r = await sendJSON<{ url: string }>("/api/schedule/teamsnap/connect", {});
+      if (r.url) window.location.href = r.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "TeamSnap connect failed");
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <h2>📅 Team schedule</h2>
+      <p className="muted small">
+        Paste your team's calendar link (TeamSnap, SportsEngine, GotSport, and most league apps export one) and TactIQ keeps your
+        games and practices in sync — powering the home page, game-plan prep, and weekly briefings.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          style={{ flex: 1, minWidth: 240 }}
+          value={url}
+          placeholder="https://…/calendar.ics or webcal://…"
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button className="btn" onClick={() => void saveIcs()} disabled={busy || !url.trim()}>
+          {busy ? "Importing…" : "Import calendar"}
+        </button>
+        {info?.teamsnap.configured && !info.teamsnap.connected && (
+          <button className="btn ghost" onClick={() => void connectTeamSnap()}>Connect TeamSnap</button>
+        )}
+        {info?.teamsnap.connected && <span className="chip" style={{ alignSelf: "center" }}>✓ TeamSnap connected</span>}
+      </div>
+      {msg && <p style={{ color: "var(--green)", fontWeight: 600, fontSize: 13 }}>{msg}</p>}
+      {error && <div className="error-box">{error}</div>}
+      {info && info.events.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {info.events.slice(0, 6).map((e) => (
+            <div key={e.id} className="season-row">
+              <span className="kind">{e.kind === "game" ? "📣" : e.kind === "practice" ? "📋" : "📅"}</span>
+              <div>
+                <div className="title">{e.kind === "game" ? `vs ${e.opponent || "TBD"}` : e.title}</div>
+                <div className="muted small">{e.start.slice(0, 16).replace("T", " · ")}{e.location ? ` · ${e.location}` : ""} · {e.source}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const EMPTY: SquadProfile = {
   teamName: "",
   players: [],
@@ -126,6 +213,8 @@ export function Team() {
           </label>
         </div>
       </div>
+
+      <ScheduleCard />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>

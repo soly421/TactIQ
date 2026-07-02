@@ -128,6 +128,19 @@ CREATE TABLE IF NOT EXISTS quest_log (
   PRIMARY KEY (user_id, day, quest_id)
 );
 
+CREATE TABLE IF NOT EXISTS schedule_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  start TEXT NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'other',
+  opponent TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'manual',
+  UNIQUE(user_id, start, title)
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_user ON schedule_events(user_id, start);
+
 CREATE TABLE IF NOT EXISTS password_resets (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -164,3 +177,4 @@ try { db.exec("ALTER TABLE clubs ADD COLUMN plan_tier TEXT NOT NULL DEFAULT 'fre
 try { db.exec("ALTER TABLE clubs ADD COLUMN seats INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN teamsnap_token TEXT"); } catch { /* exists */ }

@@ -7,6 +7,7 @@ import { api } from "./routes.js";
 import { authRouter } from "./auth.js";
 import { clubRouter } from "./club.js";
 import { billingRouter, stripeConfigured, stripeWebhook } from "./billing.js";
+import { scheduleRouter } from "./schedule.js";
 import { availableProviders, engineSummary, hasAnyProvider } from "./providers.js";
 import { emailConfigured, startDigestScheduler } from "./email.js";
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/club", clubRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/schedule", scheduleRouter);
 app.use("/api", api);
 
 // Serve the built client in production
