@@ -5,6 +5,7 @@ import { XpChart } from "../components/XpChart";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { getOfflinePlans, type SavedPlan } from "../savedPlans";
 import { TeamSwitcher } from "../components/TeamSwitcher";
+import { TouchlineDebate } from "../components/TouchlineDebate";
 import type { SeasonEntry, SquadProfile } from "../types";
 
 const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬", match: "📣", film: "🎬" };
@@ -259,6 +260,7 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
       {home && <Touchline home={home} go={go} trainNext={trainNext} />}
       {home && <Briefing text={home.briefing} go={go} />}
       {home && <WeekStrip home={home} go={go} />}
+      <div style={{ marginBottom: 16 }}><TouchlineDebate /></div>
       {home && (home.record.w + home.record.d + home.record.l > 0 || home.sessionsLogged > 0) && <Vitals home={home} />}
 
       {!squad && (

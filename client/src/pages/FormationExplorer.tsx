@@ -41,6 +41,21 @@ export function FormationExplorer() {
   const [history, setHistory] = useState<string[]>([]);
   const [hotPiece, setHotPiece] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
+  const [depth, setDepth] = useState<"quick" | "standard" | "deep">("quick");
+
+  const DEPTHS: { id: "quick" | "standard" | "deep"; label: string; pro: boolean }[] = [
+    { id: "quick", label: "⚡ Quick read", pro: false },
+    { id: "standard", label: "🔷 Standard", pro: true },
+    { id: "deep", label: "🧠 Deep Tactical", pro: true },
+  ];
+
+  function pickDepth(d: "quick" | "standard" | "deep", isPro: boolean) {
+    if (!isPro && d !== "quick") {
+      void goUpgrade(ent?.billingConfigured ?? false);
+      return;
+    }
+    setDepth(d);
+  }
 
   const formation = FORMATIONS.find((f) => f.id === formationId) ?? FORMATIONS[0];
   const formationsForFormat = FORMATIONS.filter((f) => f.format === format);
@@ -102,6 +117,7 @@ export function FormationExplorer() {
         board: pieces.map((p) => (p.id === piece.id ? { ...p, x: piece.x, y: piece.y } : p)).map(({ label, role, x, y }) => ({ label, role, x, y })),
         move: moveTxt,
         history,
+        depth,
       });
       setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, verdict: r.verdict, thinking: false } : rd)));
       celebrate(r.award);
@@ -119,7 +135,20 @@ export function FormationExplorer() {
               <button key={f} className={`tab ${format === f ? "active" : ""}`} onClick={() => pickFormat(f)}>{f}</button>
             ))}
           </div>
-          <span className="muted small">♟️ Drag any player — the engine reads every move</span>
+          <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="muted small">Engine:</span>
+            {DEPTHS.map((d) => (
+              <button
+                key={d.id}
+                className={`tab ${depth === d.id ? "active" : ""}`}
+                style={{ fontSize: 12 }}
+                title={d.id === "quick" ? "Fastest, cheapest read" : d.id === "standard" ? "Stronger tactical reasoning (Pro)" : "The flagship engine — maximum depth (Pro)"}
+                onClick={() => pickDepth(d.id, ent?.plan === "pro")}
+              >
+                {d.label}{d.pro && ent?.plan !== "pro" ? " 👑" : ""}
+              </button>
+            ))}
+          </span>
         </div>
         <div className="tabs" style={{ marginTop: 8, marginBottom: 0 }}>
           {formationsForFormat.map((f) => (

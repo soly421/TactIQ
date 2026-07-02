@@ -455,7 +455,12 @@ Give it a specific, evocative title of your own (not the catalog label).`,
 // ---- Formation lab ----
 api.post("/formation", async (req, res) => {
   const userId = uid(req);
-  const { format, ageGroup, style, squadNotes, opponentNotes } = req.body ?? {};
+  const { format, ageGroup, style, squadNotes, opponentNotes, depth } = req.body ?? {};
+  const fDepth = depth === "deep" ? "deep" : depth === "quick" ? "light" : null;
+  if (fDepth && fDepth !== "light" && planOf(userId) === "free") {
+    res.status(403).json(upgradeError("Deep Tactical analysis (the flagship engine) is a Pro feature."));
+    return;
+  }
   if (!format || !ageGroup) {
     res.status(400).json({ error: "format and ageGroup are required" });
     return;
@@ -466,7 +471,7 @@ api.post("/formation", async (req, res) => {
   }
   try {
     const analysis = await generateStructured<typeof MOCK_FORMATION>({
-      tier: tierFor(planOf(userId), "structured"),
+      tier: fDepth ?? tierFor(planOf(userId), "structured"),
       userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
@@ -904,9 +909,16 @@ api.post("/board/move", async (req, res) => {
     );
     return;
   }
-  const { format, formation, scenario, board, move, history } = req.body ?? {};
+  const { format, formation, scenario, board, move, history, depth } = req.body ?? {};
   if (!formation || !Array.isArray(board) || !move) {
     res.status(400).json({ error: "formation, board, and move are required" });
+    return;
+  }
+  const depthTier = depth === "deep" ? "deep" : depth === "standard" ? "standard" : "light";
+  if (depthTier !== "light" && planOf(userId) === "free") {
+    res.status(403).json(upgradeError(depthTier === "deep"
+      ? "Deep Tactical reads (the flagship engine) are a Pro feature."
+      : "Standard Tactical reads are a Pro feature — free coaches get Quick reads."));
     return;
   }
   kvSet(key, String(used + 1));
@@ -915,7 +927,7 @@ api.post("/board/move", async (req, res) => {
       .map((p) => `${p.label} (${p.role}) at [${Math.round(p.x)},${Math.round(p.y)}]`)
       .join("; ");
     const verdict = await generateStructured<{ headline: string; gains: string[]; risks: string[]; counterMove: string }>({
-      tier: "light",
+      tier: depthTier,
       userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 

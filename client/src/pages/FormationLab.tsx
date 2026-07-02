@@ -8,6 +8,7 @@ import type { AwardResult, FormationAnalysis } from "../types";
 export function FormationLab() {
   const { celebrate } = useGamify();
   const [form, setForm] = useState({
+    depth: "standard",
     format: "9v9",
     ageGroup: "U11",
     style: "",
@@ -52,6 +53,14 @@ export function FormationLab() {
           <label className="field">
             Age group
             <input value={form.ageGroup} onChange={(e) => set("ageGroup", e.target.value)} placeholder="e.g. U11" />
+          </label>
+          <label className="field">
+            Analysis depth
+            <select value={form.depth} onChange={(e) => set("depth", e.target.value)}>
+              <option value="quick">⚡ Quick — fast take</option>
+              <option value="standard">🔷 Standard — full game model</option>
+              <option value="deep">🧠 Deep Tactical — flagship engine (Pro)</option>
+            </select>
           </label>
           <label className="field">
             Desired style
