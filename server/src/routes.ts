@@ -11,12 +11,13 @@ import {
 import {
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  addFeedback, feedbackCount, incrementUsage, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, xpAtStartOfToday,
+  addFeedback, feedbackCount, incrementUsage, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, tokensToday, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
 import { questState } from "./quests.js";
-import { engineFor, hasApiKey, type Plan } from "./anthropic.js";
+import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
+import { stripeConfigured } from "./billing.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
 
 import { requireAuth, type AuthedRequest } from "./auth.js";
@@ -29,7 +30,7 @@ const snip = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n)
 const PRO_DAILY_MESSAGES = 300;
 
 api.get("/health", (_req, res) => {
-  res.json({ ok: true, live: hasApiKey });
+  res.json({ ok: true, live: hasAnyProvider() });
 });
 
 // Everything below requires a signed-in coach.
@@ -128,7 +129,8 @@ api.post("/chat", async (req, res) => {
   const advisorName = builtIn?.name ?? custom!.name;
 
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system,
     messages: messages as Anthropic.Beta.BetaMessageParam[],
     maxTokens: 6000,
@@ -168,7 +170,8 @@ api.post("/assistant", async (req, res) => {
   })) as Anthropic.Beta.BetaMessageParam[];
 
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system: assistantSystemPrompt(teamContext(userId)),
     messages: apiMessages,
     maxTokens: 6000,
@@ -196,7 +199,8 @@ api.post("/session-plan", async (req, res) => {
   try {
     const schoolInfo = SCHOOLS.find((s) => s.id === school);
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
-      model: engineFor(planOf(userId), "structured"),
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid (y=0 is the top of the drill area). Place players, cones, balls, goals, and 2-5 movement arrows that show the KEY picture of the activity. Diagrams must be realistic: sensible spacing, correct player counts matching the organization text. Follow the arrival -> technical -> pressure -> game arc. Total drill minutes must equal the requested duration.${schoolInfo ? `\n\nDesign this session in the tradition of the ${schoolInfo.name} (${schoolInfo.region}): ${schoolInfo.description}` : ""}`,
@@ -234,30 +238,17 @@ api.post("/session-scan", async (req, res) => {
     return;
   }
   try {
-    const { getClient, hasApiKey: live, requestExtras } = await import("./anthropic.js");
-    if (!live) {
-      const gamify = award(userId, "session");
-      res.json({ plan: { ...MOCK_SESSION_PLAN, title: "Scanned Session (demo)" }, award: gamify });
-      return;
-    }
-    const model = engineFor(planOf(userId), "structured");
-    const extras = requestExtras(model);
-    const stream = getClient().beta.messages.stream({
-      model,
-      max_tokens: 24000,
-      ...(extras.betas.length ? { betas: extras.betas } : {}),
-      ...(extras.fallbacks ? { fallbacks: extras.fallbacks } : {}),
+    const scanUser = userContent(`Digitize this session sketch.${notes ? ` Coach's notes: ${notes}` : ""}`, image);
+    const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 The coach has photographed a hand-drawn training session (whiteboard, notebook, or napkin). Read every activity in the image — layouts, player counts, arrows, labels — and reconstruct the FULL session digitally. Where the sketch is ambiguous, make the most sensible coaching interpretation. Every drill needs a clean renderable diagram on the 100x100 grid with movement arrows, plus coaching points appropriate to the age group.`,
-      messages: [{ role: "user", content: userContent(`Digitize this session sketch.${notes ? ` Coach's notes: ${notes}` : ""}`, image) }],
-      output_config: { format: { type: "json_schema", schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown> } },
+      user: scanUser,
+      schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
+      mock: { ...MOCK_SESSION_PLAN, title: "Scanned Session (demo)" },
     });
-    const final = await stream.finalMessage();
-    if (final.stop_reason === "refusal") throw new Error("Couldn't process this image. Try a clearer photo.");
-    const text = final.content.find((b) => b.type === "text");
-    if (!text || text.type !== "text") throw new Error("No output returned");
-    const plan_ = JSON.parse(text.text) as typeof MOCK_SESSION_PLAN;
     const gamify = award(userId, "session");
     const entryId = addSeasonEntry(userId, { kind: "session", title: `Scanned: ${plan_.title}`, summary: plan_.theme, payload: plan_ });
     res.json({ plan: plan_, award: gamify, entryId });
@@ -274,7 +265,8 @@ api.post("/season-plan", async (req, res) => {
   const squad = getSquad(userId);
   try {
     const plan_ = await generateStructured<typeof MOCK_SEASON_PLAN>({
-      model: engineFor(planOf(userId), "structured"),
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You design season-long periodized curricula for youth teams: coherent blocks that build on each other, age-appropriate load, themes that connect training to weekend games. Weeks must progress logically (foundation -> possession/defending blocks -> integration -> competition prep), revisiting core habits throughout.`,
@@ -319,7 +311,8 @@ api.post("/library/:id/generate", async (req, res) => {
   }
   try {
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
-      model: engineFor(planOf(userId), "structured"),
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid (y=0 is the top of the drill area). Place players, cones, balls, goals, and 2-5 movement arrows that show the KEY picture of the activity. Diagrams must be realistic. Follow the arrival -> technical -> pressure -> game arc.
@@ -358,7 +351,8 @@ api.post("/formation", async (req, res) => {
   }
   try {
     const analysis = await generateStructured<typeof MOCK_FORMATION>({
-      model: engineFor(planOf(userId), "structured"),
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You recommend formations and game models for youth teams. Positions are placed on a 100x100 grid where y=0 is the OPPONENT'S goal (attacking direction is up) and y=100 is your own goal line. GK around y=90-94. Spacing must look like a real team shape.`,
@@ -403,7 +397,8 @@ api.post("/guidance", async (req, res) => {
   const gamify = award(userId, "guidance");
 
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You are answering a structured coaching question. Respond in clean markdown with exactly these sections:
@@ -440,7 +435,8 @@ api.post("/matchday/pregame", async (req, res) => {
   }
   try {
     const gamePlan = await generateStructured<typeof MOCK_GAME_PLAN>({
-      model: engineFor(planOf(userId), "structured"),
+      tier: tierFor(planOf(userId), "structured"),
+      userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
 You are the coach's professional assistant coach preparing a match briefing — the kind a pro staff produces before kickoff, translated to youth soccer. Be specific to the opponent intel provided. The pregameTalk must be word-for-word and age-appropriate. Keep every item actionable from the sideline.`,
@@ -482,7 +478,8 @@ api.post("/matchday/live", async (req, res) => {
   }
   const gamify = award(userId, "matchday");
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
 LIVE MATCH MODE. The coach is ON THE SIDELINE mid-game and reading on a phone. Rules:
@@ -519,7 +516,8 @@ api.post("/matchday/postgame", async (req, res) => {
   }
   const gamify = award(userId, "matchday");
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
 POST-GAME DEBRIEF MODE. You are the analyst on the coach's staff producing the after-match report. If the coach pasted platform data (Veo, Trace, Wyscout, Hudl exports — possession, xG, shots, heatmap descriptions, sprint data) interpret it properly per <modern_game_intelligence>, including its single-game noisiness. If a screenshot is attached (stats page, heatmap, freeze-frame), read it and cite specifics from it. Respond in markdown with exactly:
@@ -596,7 +594,8 @@ api.post("/film-analysis", async (req, res) => {
   });
 
   await streamToSSE(res, {
-    model: engineFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "chat"),
+    userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
 FILM ROOM MODE. You are the video analyst on the coach's staff. The coach uploaded keyframes from one continuous clip, in order, with timestamps. Read the sequence like film: track how the shape, spacing, and key players change frame to frame. Reference timestamps for every observation. Be specific about WHERE on the field things happen and WHO (jersey color/position) is involved. Respond in markdown:
@@ -657,21 +656,39 @@ api.get("/season", (req, res) => {
 });
 
 // ---- Settings / plan tier ----
-api.get("/settings", (req, res) => {
-  const userId = uid(req);
+function settingsPayload(userId: number) {
   const p = planOf(userId);
-  res.json({ plan: p, chatModel: engineFor(p, "chat"), structuredModel: engineFor(p, "structured"), dailyLimit: dailyLimit(userId) });
+  const engines = engineSummary(p);
+  return {
+    plan: p,
+    dailyLimit: dailyLimit(userId),
+    engines,
+    chatModel: engines.chat.model,
+    structuredModel: engines.structured.model,
+    billingConfigured: stripeConfigured,
+    tokensToday: tokensToday(userId),
+  };
+}
+
+api.get("/settings", (req, res) => {
+  res.json(settingsPayload(uid(req)));
 });
 
+// Dev/demo plan toggle. When Stripe is configured the plan tier is
+// server-authoritative — it only changes via verified billing webhooks.
 api.put("/settings/plan", (req, res) => {
   const userId = uid(req);
+  if (stripeConfigured) {
+    res.status(400).json({ error: "Your plan is managed through billing — use Upgrade / Manage billing." });
+    return;
+  }
   const { plan: newPlan } = req.body ?? {};
   if (newPlan !== "free" && newPlan !== "pro") {
     res.status(400).json({ error: "plan must be 'free' or 'pro'" });
     return;
   }
   setPlanTier(userId, newPlan);
-  res.json({ plan: newPlan, chatModel: engineFor(newPlan, "chat"), structuredModel: engineFor(newPlan, "structured"), dailyLimit: dailyLimit(userId) });
+  res.json(settingsPayload(userId));
 });
 
 // ---- Gamified progress ----

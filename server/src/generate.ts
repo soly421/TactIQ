@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
-import { getClient, hasApiKey, requestExtras } from "./anthropic.js";
+import { hasAnyProvider, RefusalError, streamText, structuredText, TIER_INFO, type Tier } from "./providers.js";
 import { feedbackDigest, getSeason, getSquad, getUserClub } from "./store.js";
 
 // The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
@@ -64,7 +64,8 @@ ${recent || "- nothing yet, this is early in the season"}
 }
 
 interface StreamArgs {
-  model: string;
+  tier: Tier;
+  userId: number;
   system: string;
   messages: Anthropic.Beta.BetaMessageParam[];
   maxTokens?: number;
@@ -74,6 +75,8 @@ interface StreamArgs {
 }
 
 // Server-sent-events streaming of a chat completion. Emits {type:"delta"|"done"|"error"}.
+// Routes through the provider layer: first healthy provider wins, cross-provider
+// failover on errors, and the done event reports which engine actually answered.
 export async function streamToSSE(res: Response, args: StreamArgs): Promise<void> {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -82,44 +85,39 @@ export async function streamToSSE(res: Response, args: StreamArgs): Promise<void
 
   const send = (event: object) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 
-  if (!hasApiKey) {
+  if (!hasAnyProvider()) {
     for (const chunk of args.mockText.match(/.{1,24}/gs) ?? []) {
       send({ type: "delta", text: chunk });
       await new Promise((r) => setTimeout(r, 15));
     }
-    send({ type: "done", ...args.doneExtra });
+    send({ type: "done", engine: { tier: args.tier, label: `${TIER_INFO[args.tier].label} (demo)` }, ...args.doneExtra });
     res.end();
     args.onDone?.(args.mockText);
     return;
   }
 
   try {
-    const extras = requestExtras(args.model);
-    const stream = getClient().beta.messages.stream({
-      model: args.model,
-      max_tokens: args.maxTokens ?? 8000,
-      ...(extras.betas.length ? { betas: extras.betas } : {}),
-      ...(extras.fallbacks ? { fallbacks: extras.fallbacks } : {}),
+    const result = await streamText({
+      tier: args.tier,
+      userId: args.userId,
       system: args.system,
       messages: args.messages,
+      maxTokens: args.maxTokens ?? 8000,
+      onDelta: (delta) => send({ type: "delta", text: delta }),
     });
-
-    let full = "";
-    stream.on("text", (delta) => {
-      full += delta;
-      send({ type: "delta", text: delta });
+    send({
+      type: "done",
+      engine: { tier: args.tier, label: TIER_INFO[args.tier].label, provider: result.provider, model: result.model },
+      ...args.doneExtra,
     });
-
-    const final = await stream.finalMessage();
-    if (final.stop_reason === "refusal") {
-      send({ type: "error", message: "That request couldn't be completed. Try rephrasing your question." });
-    } else {
-      send({ type: "done", ...args.doneExtra });
-      args.onDone?.(full);
-    }
+    args.onDone?.(result.text);
   } catch (err) {
-    console.error("stream error", err);
-    send({ type: "error", message: "The coaching engine hit a problem. Please try again." });
+    if (err instanceof RefusalError) {
+      send({ type: "error", message: err.message });
+    } else {
+      console.error("stream error", err);
+      send({ type: "error", message: "The coaching engine hit a problem. Please try again." });
+    }
   }
   res.end();
 }
@@ -139,36 +137,27 @@ export function userContent(text: string, imageDataUrl?: string): Anthropic.Beta
 }
 
 interface StructuredArgs<T> {
-  model: string;
+  tier: Tier;
+  userId: number;
   system: string;
-  user: string;
+  user: string | Anthropic.Beta.BetaContentBlockParam[];
   schema: Record<string, unknown>;
   maxTokens?: number;
   mock: T;
 }
 
-// Structured JSON generation via output_config.format — guaranteed schema-valid output.
+// Structured JSON generation, schema-constrained on whichever provider answers
+// (output_config on Anthropic, response_format json_schema on OpenAI).
 export async function generateStructured<T>(args: StructuredArgs<T>): Promise<T> {
-  if (!hasApiKey) return args.mock;
+  if (!hasAnyProvider()) return args.mock;
 
-  const extras = requestExtras(args.model);
-  const stream = getClient().beta.messages.stream({
-    model: args.model,
-    max_tokens: args.maxTokens ?? 24000,
-    ...(extras.betas.length ? { betas: extras.betas } : {}),
-    ...(extras.fallbacks ? { fallbacks: extras.fallbacks } : {}),
+  const result = await structuredText({
+    tier: args.tier,
+    userId: args.userId,
     system: args.system,
-    messages: [{ role: "user", content: args.user }],
-    output_config: {
-      format: { type: "json_schema", schema: args.schema },
-    },
+    user: args.user,
+    schema: args.schema,
+    maxTokens: args.maxTokens ?? 24000,
   });
-
-  const final = await stream.finalMessage();
-  if (final.stop_reason === "refusal") {
-    throw new Error("The model declined this request. Try adjusting your inputs.");
-  }
-  const text = final.content.find((b) => b.type === "text");
-  if (!text || text.type !== "text") throw new Error("No structured output returned.");
-  return JSON.parse(text.text) as T;
+  return JSON.parse(result.text) as T;
 }

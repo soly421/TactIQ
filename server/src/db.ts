@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS quest_log (
   done INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, day, quest_id)
 );
+
+CREATE TABLE IF NOT EXISTS model_calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  t TEXT NOT NULL DEFAULT (datetime('now')),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_model_calls_user ON model_calls(user_id, id DESC);
 `);
 
 export function today(): string {
@@ -135,3 +147,5 @@ export function today(): string {
 
 // Idempotent column adds for older databases.
 try { db.exec("ALTER TABLE clubs ADD COLUMN philosophy TEXT NOT NULL DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }

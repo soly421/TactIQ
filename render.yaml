@@ -1,13 +1,44 @@
 # One-click deploy blueprint for Render (render.com).
-# New > Blueprint > point at this repo/branch, set ANTHROPIC_API_KEY, deploy.
+# New > Blueprint > point at this repo/branch, set the secret env vars, deploy.
+#
+# Production checklist:
+#   - ANTHROPIC_API_KEY and/or OPENAI_API_KEY (at least one; both = failover)
+#   - JWT_SECRET: long random string (sessions invalidate if it changes)
+#   - Stripe (Pro tier): STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+#     STRIPE_PRICE_ID_PRO, PUBLIC_URL (e.g. https://tactiq.onrender.com)
+#     Webhook endpoint in the Stripe dashboard: <PUBLIC_URL>/api/billing/webhook
+#     with events: checkout.session.completed, customer.subscription.updated,
+#     customer.subscription.deleted
+#   - Attach a persistent disk mounted at /data so the database survives
+#     deploys (free tier has no disk — data resets on redeploy).
 services:
   - type: web
     name: tactiq
     runtime: docker
-    plan: free
+    plan: starter # persistent disk requires a paid instance; use "free" to demo
     healthCheckPath: /api/health
+    disk:
+      name: tactiq-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false # set in the Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false # optional second provider (failover)
+      - key: PREFERRED_PROVIDER
+        value: anthropic
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /data/tactiq.db
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID_PRO
+        sync: false
+      - key: PUBLIC_URL
+        sync: false # your public https URL, used for Stripe redirect links
       - key: PORT
         value: "8787"

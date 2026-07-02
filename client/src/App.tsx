@@ -33,13 +33,44 @@ function TopBar() {
     void getJSON<Settings>("/api/settings").then(setSettings).catch(() => {});
   }, [progress?.plan]);
 
-  async function togglePlan() {
+  // Returning from Stripe checkout: the webhook flips the plan server-side —
+  // poll settings a few times so the chip flips to PRO without a manual reload.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("billing")) return;
+    const wasSuccess = params.get("billing") === "success";
+    window.history.replaceState({}, "", window.location.pathname);
+    if (!wasSuccess) return;
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      void getJSON<Settings>("/api/settings").then((s) => {
+        setSettings(s);
+        if (s.plan === "pro" || tries >= 10) clearInterval(poll);
+      });
+    }, 2000);
+    return () => clearInterval(poll);
+  }, []);
+
+  // With Stripe configured the chip starts checkout (free) or opens the
+  // customer portal (pro). Without it, it stays the local dev toggle.
+  async function planAction() {
     if (!settings) return;
+    if (settings.billingConfigured) {
+      const path = settings.plan === "free" ? "/api/billing/checkout" : "/api/billing/portal";
+      const r = await sendJSON<{ url: string }>(path, {});
+      if (r.url) window.location.href = r.url;
+      return;
+    }
     const next = settings.plan === "free" ? "pro" : "free";
     const updated = await sendJSON<Settings>("/api/settings/plan", { plan: next }, "PUT");
     setSettings(updated);
     void refresh();
   }
+
+  const engineTitle = settings?.engines
+    ? `Chat: ${settings.engines.chat.label} (${settings.engines.chat.model}) · Visualizations: ${settings.engines.structured.label} (${settings.engines.structured.model})`
+    : "";
 
   return (
     <div className="topbar no-print">
@@ -50,13 +81,24 @@ function TopBar() {
           <span className="chip quota"><b>{Math.max(0, progress.usage.limit - progress.usage.used)}</b>/{progress.usage.limit} msgs</span>
         </>
       )}
+      {settings?.engines && (
+        <span className="chip" title={engineTitle}>
+          {settings.plan === "pro" ? "🧠" : "⚡"} {settings.engines.chat.label}
+        </span>
+      )}
       {settings && (
         <button
           className={`chip plan-chip ${settings.plan}`}
-          title={`Chat: ${settings.chatModel} · Visualizations: ${settings.structuredModel}. Click to switch plan.`}
-          onClick={() => void togglePlan()}
+          title={
+            settings.billingConfigured
+              ? settings.plan === "free"
+                ? "Upgrade to Pro — Deep Tactical engine on every output"
+                : "Manage your subscription"
+              : `${engineTitle} Click to switch plan (dev mode).`
+          }
+          onClick={() => void planAction()}
         >
-          {settings.plan === "pro" ? "👑 PRO" : "FREE"}
+          {settings.plan === "pro" ? "👑 PRO" : settings.billingConfigured ? "⬆️ Upgrade" : "FREE"}
         </button>
       )}
     </div>

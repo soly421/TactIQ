@@ -243,6 +243,37 @@ export function setClubPhilosophy(clubId: number, text: string): void {
   db.prepare("UPDATE clubs SET philosophy = ? WHERE id = ?").run(text.slice(0, 4000), clubId);
 }
 
+// ---- billing (Stripe linkage; plan tier is server-authoritative) ----
+export function getUserBilling(userId: number): { email: string; stripeCustomerId: string | null; stripeSubscriptionId: string | null } | null {
+  const row = db.prepare("SELECT email, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?").get(userId) as
+    | { email: string; stripe_customer_id: string | null; stripe_subscription_id: string | null }
+    | undefined;
+  return row ? { email: row.email, stripeCustomerId: row.stripe_customer_id, stripeSubscriptionId: row.stripe_subscription_id } : null;
+}
+
+export function setStripeIds(userId: number, customerId: string, subscriptionId: string | null): void {
+  db.prepare("UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?").run(customerId, subscriptionId, userId);
+}
+
+export function findUserByStripeCustomer(customerId: string): number | null {
+  const row = db.prepare("SELECT id FROM users WHERE stripe_customer_id = ?").get(customerId) as { id: number } | undefined;
+  return row?.id ?? null;
+}
+
+// ---- model call ledger (cost integrity: every AI call logged with token usage) ----
+export function logModelCall(c: { userId: number; provider: string; model: string; tier: string; inputTokens: number; outputTokens: number }): void {
+  db.prepare("INSERT INTO model_calls (user_id, provider, model, tier, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)").run(
+    c.userId, c.provider, c.model, c.tier, c.inputTokens, c.outputTokens,
+  );
+}
+
+export function tokensToday(userId: number): { input: number; output: number; calls: number } {
+  const row = db
+    .prepare("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) n FROM model_calls WHERE user_id = ? AND t >= date('now')")
+    .get(userId) as { i: number; o: number; n: number };
+  return { input: row.i, output: row.o, calls: row.n };
+}
+
 // ---- feedback (output ratings -> eval dataset) ----
 export function addFeedback(userId: number, f: { entryId?: number | null; kind: string; vote: 1 | -1; note?: string }): void {
   db.prepare("INSERT INTO feedback (user_id, entry_id, kind, vote, note) VALUES (?, ?, ?, ?, ?)").run(

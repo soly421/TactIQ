@@ -179,11 +179,21 @@ export interface SessionTemplate {
   unlocked: boolean;
 }
 
+export interface EngineInfo {
+  tier: "light" | "standard" | "deep";
+  label: string;
+  model: string;
+  provider: string;
+}
+
 export interface Settings {
   plan: "free" | "pro";
   chatModel: string;
   structuredModel: string;
   dailyLimit: number;
+  engines?: { chat: EngineInfo; structured: EngineInfo };
+  billingConfigured?: boolean;
+  tokensToday?: { input: number; output: number; calls: number };
 }
 
 export interface GamePlan {
