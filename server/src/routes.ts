@@ -15,7 +15,8 @@ import {
   activeTeamId, addFeedback, createTeam, deleteTeam, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
-import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
+import { award, BADGES, FREE_DAILY_MESSAGES, levelFor, streakFreezeAvailable } from "./gamification.js";
+import { communitySnapshot } from "./community.js";
 import { questState } from "./quests.js";
 import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
 import { stripeConfigured } from "./billing.js";
@@ -857,6 +858,24 @@ api.put("/settings/plan", (req, res) => {
   }
   setPlanTier(userId, newPlan);
   res.json(settingsPayload(userId));
+});
+
+// ---- Community: weekly league, club cup, recap ----
+api.get("/community", (req, res) => {
+  const userId = uid(req);
+  const snap = communitySnapshot(userId);
+  const p = getProgress(userId);
+  res.json({
+    ...snap,
+    streak: { current: p.streak, freezeAvailable: streakFreezeAvailable(userId) },
+    recap: {
+      ...snap.recap,
+      sessions: p.counts.session ?? 0,
+      matchdays: p.counts.matchday ?? 0,
+      chats: p.counts.chat ?? 0,
+      ratings: p.counts.rate ?? 0,
+    },
+  });
 });
 
 // ---- Entitlements: what this coach's plan includes, with live usage ----
