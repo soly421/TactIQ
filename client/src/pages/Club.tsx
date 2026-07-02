@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
-import type { ClubOverview, ClubSession, User } from "../types";
+import type { ClubComment, ClubOverview, ClubSession, User } from "../types";
 
 // Club mode: the Director of Coaching's view — coach activity, club philosophy,
 // and club-wide session distribution.
@@ -12,7 +12,27 @@ export function Club({ user }: { user: User }) {
   const [philosophy, setPhilosophy] = useState("");
   const [upload, setUpload] = useState({ title: "", description: "", content: "" });
   const [openSession, setOpenSession] = useState<ClubSession | null>(null);
+  const [comments, setComments] = useState<ClubComment[]>([]);
+  const [newComment, setNewComment] = useState("");
   const [notice, setNotice] = useState("");
+
+  async function openWithComments(s: ClubSession | null) {
+    setOpenSession(s);
+    setComments([]);
+    if (s) {
+      try {
+        const r = await getJSON<{ comments: ClubComment[] }>(`/api/club/sessions/${s.id}/comments`);
+        setComments(r.comments);
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function postComment() {
+    if (!openSession || !newComment.trim()) return;
+    const r = await sendJSON<{ comments: ClubComment[] }>(`/api/club/sessions/${openSession.id}/comments`, { text: newComment });
+    setComments(r.comments);
+    setNewComment("");
+  }
 
   const load = useCallback(async () => {
     try {
@@ -147,7 +167,7 @@ export function Club({ user }: { user: User }) {
           <p className="muted small">Sessions the DOC distributes to every coach in the club.</p>
           {sessions.length === 0 && <p className="muted small">Nothing uploaded yet.</p>}
           {sessions.map((s) => (
-            <div key={s.id} className="season-row" style={{ cursor: "pointer" }} onClick={() => setOpenSession(openSession?.id === s.id ? null : s)}>
+            <div key={s.id} className="season-row" style={{ cursor: "pointer" }} onClick={() => void openWithComments(openSession?.id === s.id ? null : s)}>
               <span className="kind">📋</span>
               <div>
                 <div className="title">{s.title}</div>
@@ -160,6 +180,27 @@ export function Club({ user }: { user: User }) {
             <div className="card" style={{ marginTop: 10, background: "var(--bg-elev)" }}>
               <h3>{openSession.title}</h3>
               <p className="small" style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{openSession.content}</p>
+              <h3 style={{ marginTop: 14 }}>💬 Coach discussion ({comments.length})</h3>
+              {comments.map((c) => (
+                <div key={c.id} className="comment-row">
+                  <div className="avatar">{c.author.slice(0, 1).toUpperCase()}</div>
+                  <div>
+                    <span className="author">{c.author}</span>
+                    <span className="when">{c.created_at.slice(0, 10)}</span>
+                    <div>{c.text}</div>
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <input
+                  style={{ flex: 1 }}
+                  value={newComment}
+                  placeholder="Add a note for the club's coaches… (no player last names)"
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void postComment()}
+                />
+                <button className="btn ghost" onClick={() => void postComment()} disabled={!newComment.trim()}>Post</button>
+              </div>
             </div>
           )}
           {club.isAdmin && (

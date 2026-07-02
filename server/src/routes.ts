@@ -5,13 +5,13 @@ import { baseSystemPrompt } from "./knowledge.js";
 import { SESSION_PLAN_SCHEMA, FORMATION_ANALYSIS_SCHEMA, GAME_PLAN_SCHEMA, SEASON_PLAN_SCHEMA } from "./schemas.js";
 import { generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
 import {
-  MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE,
+  MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
 import {
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  incrementUsage, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, xpAtStartOfToday,
+  addFeedback, feedbackCount, incrementUsage, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
@@ -204,8 +204,8 @@ You design world-class youth training sessions. Every drill must include a rende
     });
 
     const gamify = award(userId, "session");
-    addSeasonEntry(userId, { kind: "session", title: plan_.title, summary: `${plan_.ageGroup} · ${plan_.theme}`, payload: plan_ });
-    res.json({ plan: plan_, award: gamify });
+    const entryId = addSeasonEntry(userId, { kind: "session", title: plan_.title, summary: `${plan_.ageGroup} · ${plan_.theme}`, payload: plan_ });
+    res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
@@ -246,8 +246,8 @@ The coach has photographed a hand-drawn training session (whiteboard, notebook, 
     if (!text || text.type !== "text") throw new Error("No output returned");
     const plan_ = JSON.parse(text.text) as typeof MOCK_SESSION_PLAN;
     const gamify = award(userId, "session");
-    addSeasonEntry(userId, { kind: "session", title: `Scanned: ${plan_.title}`, summary: plan_.theme, payload: plan_ });
-    res.json({ plan: plan_, award: gamify });
+    const entryId = addSeasonEntry(userId, { kind: "session", title: `Scanned: ${plan_.title}`, summary: plan_.theme, payload: plan_ });
+    res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Scan failed" });
@@ -275,8 +275,8 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
       mock: MOCK_SEASON_PLAN,
     });
     const gamify = award(userId, "session");
-    addSeasonEntry(userId, { kind: "session", title: `Season plan: ${plan_.title}`, summary: `${plan_.weeks.length} weeks`, payload: plan_ });
-    res.json({ plan: plan_, award: gamify });
+    const entryId = addSeasonEntry(userId, { kind: "session", title: `Season plan: ${plan_.title}`, summary: `${plan_.weeks.length} weeks`, payload: plan_ });
+    res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
@@ -304,7 +304,6 @@ api.post("/library/:id/generate", async (req, res) => {
     res.json({ plan: cached, cached: true });
     return;
   }
-  const school = SCHOOLS.find((s) => s.id === template.school)!;
   try {
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
       model: engineFor(planOf(userId), "structured"),
@@ -312,22 +311,24 @@ api.post("/library/:id/generate", async (req, res) => {
 
 You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid (y=0 is the top of the drill area). Place players, cones, balls, goals, and 2-5 movement arrows that show the KEY picture of the activity. Diagrams must be realistic. Follow the arrival -> technical -> pressure -> game arc.
 
-This session is from TactIQ's library — design it faithfully in the tradition of the ${school.name} (${school.region}): ${school.description}`,
+This session is from TactIQ's library. Build it to spec:
+- Topic: ${template.topicName} (${template.phase} phase)
+- Core concept to train: ${template.concept}
+- Complexity: ${template.complexity} — ${template.complexity === "foundation" ? "core habits, simple pictures, minimal rules" : template.complexity === "intermediate" ? "add pressure, decisions, and game-realistic pictures" : "full tactical detail, opposition pictures, position-specific roles"}
+- The session must be UNIQUE and specific to this topic/complexity/age — not a generic template.`,
       user: `Build this library session in full:
-- Title: ${template.title}
-- Format: ${template.format} (${template.zone})
-- Age band: ${template.ageBand}
-- Theme: ${template.theme}
-- Concept: ${template.description}
-- Duration: 75 minutes${getSquad(userId) ? `\nAdapt player counts and complexity to the coach's team profile where sensible.` : ""}`,
+- Title basis: ${template.title}
+- Age band: ${template.ageBand} (${template.format})
+- Duration: 75 minutes${getSquad(userId) ? `\nAdapt player counts and complexity to the coach's team profile where sensible.` : ""}
+Give it a specific, evocative title of your own (not the catalog label).`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...MOCK_SESSION_PLAN, title: template.title, theme: template.theme, ageGroup: template.ageBand },
+      mock: { ...MOCK_SESSION_PLAN, title: `${template.topicName} (demo sample)`, theme: template.theme, ageGroup: template.ageBand },
     });
 
     saveLibraryPlan(userId, template.id, plan_);
     const gamify = award(userId, "library");
-    addSeasonEntry(userId, { kind: "session", title: `Library: ${template.title}`, summary: `${school.name} · ${template.format}`, payload: plan_ });
-    res.json({ plan: plan_, award: gamify });
+    const entryId = addSeasonEntry(userId, { kind: "session", title: `Library: ${template.title}`, summary: `${template.phase} · ${template.format}`, payload: plan_ });
+    res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
@@ -360,13 +361,13 @@ You recommend formations and game models for youth teams. Positions are placed o
     });
 
     const gamify = award(userId, "formation");
-    addSeasonEntry(userId, {
+    const entryId = addSeasonEntry(userId, {
       kind: "formation",
       title: `Formation: ${analysis.recommendedFormation}`,
       summary: `${ageGroup} ${format} · ${style || "open style"}`,
       payload: analysis,
     });
-    res.json({ analysis, award: gamify });
+    res.json({ analysis, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
@@ -437,8 +438,8 @@ You are the coach's professional assistant coach preparing a match briefing — 
       mock: MOCK_GAME_PLAN,
     });
     const gamify = award(userId, "matchday");
-    addSeasonEntry(userId, { kind: "guidance", title: `Game plan: ${gamePlan.matchTitle}`, summary: gamePlan.keysToTheGame[0] ?? "", payload: gamePlan });
-    res.json({ gamePlan, award: gamify });
+    const entryId = addSeasonEntry(userId, { kind: "guidance", title: `Game plan: ${gamePlan.matchTitle}`, summary: gamePlan.keysToTheGame[0] ?? "", payload: gamePlan });
+    res.json({ gamePlan, award: gamify, entryId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
@@ -511,6 +512,70 @@ POST-GAME DEBRIEF MODE. You are the analyst on the coach's staff producing the a
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: () => {
       addSeasonEntry(userId, { kind: "guidance", title: `Post-game debrief${result ? `: ${result}` : ""}`, summary: String(story || statsPaste || "").slice(0, 120) });
+    },
+  });
+});
+
+
+// ---- Output ratings: the crowdsourced eval dataset ----
+api.post("/feedback", (req, res) => {
+  const userId = uid(req);
+  const { entryId, kind, vote, note } = req.body ?? {};
+  if (vote !== 1 && vote !== -1) {
+    res.status(400).json({ error: "vote must be 1 or -1" });
+    return;
+  }
+  addFeedback(userId, { entryId: entryId ?? null, kind: String(kind ?? "output").slice(0, 30), vote, note });
+  const gamify = award(userId, "rate");
+  res.json({ ok: true, award: gamify, totalRatings: feedbackCount(userId) });
+});
+
+// ---- Film Room: keyframe sequence -> timestamped tactical analysis (SSE) ----
+api.post("/film-analysis", async (req, res) => {
+  const userId = uid(req);
+  const { frames, context } = req.body as { frames: { t: number; image: string }[]; context?: string };
+  if (!Array.isArray(frames) || frames.length === 0) {
+    res.status(400).json({ error: "frames are required" });
+    return;
+  }
+  if (frames.length > 10) {
+    res.status(400).json({ error: "Maximum 10 frames per clip" });
+    return;
+  }
+  const quota = consumeMessage(userId);
+  if (!quota.ok) {
+    res.status(429).json({ error: quotaError(userId) });
+    return;
+  }
+  const gamify = award(userId, "film");
+
+  const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+  for (const f of frames) {
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(f.image ?? "");
+    if (!match) continue;
+    content.push({ type: "text", text: `Frame at ${Number(f.t).toFixed(1)}s:` });
+    content.push({ type: "image", source: { type: "base64", media_type: match[1] as "image/png" | "image/jpeg" | "image/webp", data: match[2] } });
+  }
+  content.push({
+    type: "text",
+    text: `These are sequential keyframes from one video clip of my team (timestamps shown). ${context || "Analyze what happens tactically across the sequence."}`,
+  });
+
+  await streamToSSE(res, {
+    model: engineFor(planOf(userId), "chat"),
+    system: `${baseSystemPrompt()}${teamContext(userId)}
+
+FILM ROOM MODE. You are the video analyst on the coach's staff. The coach uploaded keyframes from one continuous clip, in order, with timestamps. Read the sequence like film: track how the shape, spacing, and key players change frame to frame. Reference timestamps for every observation. Be specific about WHERE on the field things happen and WHO (jersey color/position) is involved. Respond in markdown:
+## What I See  (timestamped observations across the sequence)
+## The Problem  (the single biggest tactical issue this clip reveals)
+## Fix It  (the picture/instruction to give players)
+## Train It  (1-2 activities that recreate and fix this exact moment)`,
+    messages: [{ role: "user", content }],
+    maxTokens: 6000,
+    mockText: MOCK_FILM,
+    doneExtra: { award: gamify, remaining: quota.remaining },
+    onDone: () => {
+      addSeasonEntry(userId, { kind: "guidance", title: "Film Room breakdown", summary: (context ?? "video clip analysis").slice(0, 120) });
     },
   });
 });

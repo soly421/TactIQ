@@ -3,6 +3,7 @@ import { SessionStudio } from "./SessionStudio";
 import { FormationLab } from "./FormationLab";
 import { Playbook } from "./Playbook";
 import { FieldBoard } from "./FieldBoard";
+import { FilmRoom } from "./FilmRoom";
 import { sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
@@ -12,6 +13,7 @@ const SEGMENTS = [
   { id: "sessions", label: "📋 Sessions" },
   { id: "scan", label: "📷 Session Scan" },
   { id: "board", label: "🎯 Field Board" },
+  { id: "film", label: "🎞️ Film Room" },
   { id: "formations", label: "🔷 Formations" },
   { id: "season", label: "🗓️ Season Plan" },
   { id: "playbook", label: "💡 Playbook" },
@@ -34,6 +36,7 @@ export function Studio() {
       {seg === "sessions" && <SessionStudio />}
       {seg === "scan" && <SessionScan />}
       {seg === "board" && <FieldBoard />}
+      {seg === "film" && <FilmRoom />}
       {seg === "formations" && <FormationLab />}
       {seg === "season" && <SeasonPlanner />}
       {seg === "playbook" && <Playbook />}

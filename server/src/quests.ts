@@ -18,6 +18,8 @@ const QUEST_POOL: QuestDef[] = [
   { id: "library-1", title: "Unlock a session from the Library", emoji: "📚", action: "library", target: 1, bonusXp: 35 },
   { id: "matchday-1", title: "Use Match Day (pre, live, or post)", emoji: "📣", action: "matchday", target: 1, bonusXp: 40 },
   { id: "chat-5", title: "Have a 5-message tactics debate", emoji: "🗣️", action: "chat", target: 5, bonusXp: 45 },
+  { id: "rate-3", title: "Rate 3 outputs (👍/👎)", emoji: "🔎", action: "rate", target: 3, bonusXp: 20 },
+  { id: "film-1", title: "Break down a clip in the Film Room", emoji: "🎞️", action: "film", target: 1, bonusXp: 40 },
 ];
 
 // Deterministic 3 quests per day (same for everyone — feels like a shared daily).

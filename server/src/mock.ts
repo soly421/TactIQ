@@ -254,3 +254,6 @@ export const MOCK_SEASON_PLAN = {
   principles: ["Development over results all season", "Every player plays every position", "Success = brave attempts"],
   checkpoints: ["Week 4: players ask to play out short on goal kicks", "Week 8: first-touch turns appear in games unprompted", "Week 12: team recognizably plays through thirds"],
 };
+
+export const MOCK_FILM =
+  "## What I See\n[Demo mode — set ANTHROPIC_API_KEY for live film analysis]\n- **0:02** — Back line is flat and 25 yards from the midfield: two units, no connection.\n- **0:08** — Ball-side pressure arrives but the far-side winger is ball-watching; the switch is wide open.\n- **0:14** — After the turnover, three players chase the same ball — no rest-defense triangle.\n\n## The Problem\nYour shape stretches the moment the ball moves — distances between lines grow instead of sliding together.\n\n## Fix It\nOne picture: \"move like you're connected by rope.\" When the ball shifts, the WHOLE block shifts within two seconds.\n\n## Train It\n- Shadow-play shifting (no opponent): back four + mids slide on the coach's pointer, 8 min\n- 8v8 zone game: goals only count if the whole team is inside the ball-side half — forces collective sliding.";

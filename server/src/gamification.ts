@@ -3,7 +3,7 @@ import { recordQuestProgress, type QuestDef } from "./quests.js";
 
 export const FREE_DAILY_MESSAGES = 30;
 
-export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday";
+export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film";
 
 const XP_RULES: Record<XpAction, number> = {
   chat: 5,
@@ -14,6 +14,8 @@ const XP_RULES: Record<XpAction, number> = {
   "advisor-built": 60,
   library: 35,
   matchday: 45,
+  rate: 2,
+  film: 45,
 };
 
 export const LEVELS = [
@@ -52,6 +54,8 @@ export const BADGES: BadgeDef[] = [
   { id: "librarian", name: "Librarian", emoji: "📖", description: "Unlock 3 sessions from the Library", earned: (p) => (p.counts.library ?? 0) >= 3 },
   { id: "gameday", name: "Game Day Ready", emoji: "📣", description: "Prepare your first match with Match Day", earned: (p) => (p.counts.matchday ?? 0) >= 1 },
   { id: "full-staff", name: "Full Staff", emoji: "🎬", description: "Run pre-game, live, and post-game in Match Day", earned: (p) => (p.counts.matchday ?? 0) >= 3 },
+  { id: "quality-scout", name: "Quality Scout", emoji: "🔎", description: "Rate 10 outputs to sharpen TactIQ", earned: (p) => (p.counts.rate ?? 0) >= 10 },
+  { id: "film-analyst", name: "Film Analyst", emoji: "🎞️", description: "Analyze your first video clip in the Film Room", earned: (p) => (p.counts.film ?? 0) >= 1 },
 ];
 
 export function levelFor(xp: number) {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
+import { RateBar } from "../components/RateBar";
 
 const TOPICS = [
   "Beating a high press",
@@ -87,7 +88,14 @@ export function Playbook() {
 
       {(answer || streaming) && (
         <div className="card fade-in">
-          {answer ? <Markdown text={answer} /> : <span className="typing"><span /><span /><span /></span>}
+          {answer ? (
+            <>
+              <Markdown text={answer} />
+              {!streaming && <RateBar kind="guidance" />}
+            </>
+          ) : (
+            <span className="typing"><span /><span /><span /></span>
+          )}
         </div>
       )}
     </div>

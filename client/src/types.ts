@@ -166,11 +166,14 @@ export interface School {
 
 export interface SessionTemplate {
   id: string;
-  school: string;
-  title: string;
-  format: string;
-  zone: string;
+  topic: string;
+  topicName: string;
+  phase: string;
+  emoji: string;
   ageBand: string;
+  complexity: string;
+  format: string;
+  title: string;
   theme: string;
   description: string;
   unlocked: boolean;
@@ -218,4 +221,11 @@ export interface ClubSession {
   content: string;
   created_at: string;
   uploaded_by_name?: string;
+}
+
+export interface ClubComment {
+  id: number;
+  text: string;
+  created_at: string;
+  author: string;
 }

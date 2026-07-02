@@ -98,6 +98,27 @@ CREATE TABLE IF NOT EXISTS club_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_club_sessions ON club_sessions(club_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entry_id INTEGER,
+  kind TEXT NOT NULL,
+  vote INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS club_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  club_id INTEGER NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+  session_id INTEGER NOT NULL REFERENCES club_sessions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_club_comments ON club_comments(session_id, id);
+
 CREATE TABLE IF NOT EXISTS quest_log (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   day TEXT NOT NULL,

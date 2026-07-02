@@ -1,7 +1,8 @@
 import { PitchDiagram } from "./PitchDiagram";
+import { RateBar } from "./RateBar";
 import type { SessionPlan } from "../types";
 
-export function SessionPlanView({ plan }: { plan: SessionPlan }) {
+export function SessionPlanView({ plan, entryId }: { plan: SessionPlan; entryId?: number }) {
   return (
     <div className="fade-in">
       <div className="hero" style={{ paddingBottom: 20 }}>
@@ -56,6 +57,7 @@ export function SessionPlanView({ plan }: { plan: SessionPlan }) {
       <div className="card">
         <h3>🧠 Coach reminders</h3>
         <ul className="points">{plan.coachReminders.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        <RateBar kind="session" entryId={entryId} />
       </div>
     </div>
   );

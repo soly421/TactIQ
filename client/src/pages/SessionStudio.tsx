@@ -19,6 +19,7 @@ export function SessionStudio() {
     notes: "",
   });
   const [plan, setPlan] = useState<SessionPlan | null>(null);
+  const [entryId, setEntryId] = useState<number | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,13 +38,14 @@ export function SessionStudio() {
     setLoading(true);
     setPlan(null);
     try {
-      const res = await sendJSON<{ plan: SessionPlan; award: AwardResult }>("/api/session-plan", {
+      const res = await sendJSON<{ plan: SessionPlan; award: AwardResult; entryId?: number }>("/api/session-plan", {
         ...form,
         playersAvailable: Number(form.playersAvailable) || undefined,
         durationMinutes: Number(form.durationMinutes) || 75,
         school: form.school || undefined,
       });
       setPlan(res.plan);
+      setEntryId(res.entryId);
       celebrate(res.award);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -117,7 +119,7 @@ export function SessionStudio() {
         </div>
       )}
 
-      {plan && <SessionPlanView plan={plan} />}
+      {plan && <SessionPlanView plan={plan} entryId={entryId} />}
     </div>
   );
 }

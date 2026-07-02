@@ -2,6 +2,7 @@ import { useState } from "react";
 import { sendJSON } from "../api";
 import { FormationPitch } from "../components/FormationPitch";
 import { useGamify } from "../components/Gamify";
+import { RateBar } from "../components/RateBar";
 import type { AwardResult, FormationAnalysis } from "../types";
 
 export function FormationLab() {
@@ -14,6 +15,7 @@ export function FormationLab() {
     opponentNotes: "",
   });
   const [analysis, setAnalysis] = useState<FormationAnalysis | null>(null);
+  const [entryId, setEntryId] = useState<number | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,8 +26,9 @@ export function FormationLab() {
     setLoading(true);
     setAnalysis(null);
     try {
-      const res = await sendJSON<{ analysis: FormationAnalysis; award: AwardResult }>("/api/formation", form);
+      const res = await sendJSON<{ analysis: FormationAnalysis; award: AwardResult; entryId?: number }>("/api/formation", form);
       setAnalysis(res.analysis);
+      setEntryId(res.entryId);
       celebrate(res.award);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -126,6 +129,7 @@ export function FormationLab() {
               <ul className="points">{analysis.trainingPriorities.map((s, i) => <li key={i}>{s}</li>)}</ul>
             </div>
           </div>
+          <RateBar kind="formation" entryId={entryId} />
         </div>
       )}
     </div>

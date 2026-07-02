@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { addClubSession, clubCoaches, getClubSessions, getUserClub, setClubPhilosophy } from "./store.js";
+import { addClubComment, addClubSession, clubCoaches, getClubComments, getClubSessions, getUserClub, setClubPhilosophy } from "./store.js";
 import { levelFor } from "./gamification.js";
 
 // Club mode: what a Director of Coaching needs — coach oversight, club-wide
@@ -73,4 +73,28 @@ clubRouter.post("/sessions", (req, res) => {
     content: String(content).slice(0, 20000),
   });
   res.json({ ok: true, sessions: getClubSessions(club.id) });
+});
+
+clubRouter.get("/sessions/:id/comments", (req, res) => {
+  const club = getUserClub(uid(req));
+  if (!club) {
+    res.status(404).json({ error: "Not in a club" });
+    return;
+  }
+  res.json({ comments: getClubComments(Number(req.params.id)) });
+});
+
+clubRouter.post("/sessions/:id/comments", (req, res) => {
+  const club = getUserClub(uid(req));
+  if (!club) {
+    res.status(404).json({ error: "Not in a club" });
+    return;
+  }
+  const text = String(req.body?.text ?? "").trim();
+  if (!text) {
+    res.status(400).json({ error: "Comment text required" });
+    return;
+  }
+  addClubComment(club.id, Number(req.params.id), uid(req), text);
+  res.json({ comments: getClubComments(Number(req.params.id)) });
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { sendJSON, streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
+import { RateBar } from "../components/RateBar";
 import type { AwardResult, ChatMessage, GamePlan } from "../types";
 
 const SEGMENTS = [
@@ -139,6 +140,7 @@ function PreGame() {
           <div className="card" style={{ marginTop: 14, borderColor: "var(--accent)" }}>
             <h3>🗣️ Your pregame talk</h3>
             <p style={{ fontSize: 15, lineHeight: 1.7, fontStyle: "italic" }}>"{planData.pregameTalk}"</p>
+            <RateBar kind="matchday-pregame" />
           </div>
         </div>
       )}
@@ -303,7 +305,14 @@ function PostGame() {
 
       {(answer || streaming) && (
         <div className="card fade-in">
-          {answer ? <Markdown text={answer} /> : <span className="typing"><span /><span /><span /></span>}
+          {answer ? (
+            <>
+              <Markdown text={answer} />
+              {!streaming && <RateBar kind="matchday-postgame" />}
+            </>
+          ) : (
+            <span className="typing"><span /><span /><span /></span>
+          )}
         </div>
       )}
     </div>

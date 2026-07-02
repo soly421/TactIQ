@@ -64,14 +64,15 @@ export function saveSquad(userId: number, squad: SquadProfile): void {
 }
 
 // ---- season log ----
-export function addSeasonEntry(userId: number, entry: Omit<SeasonEntry, "id" | "date">): void {
-  db.prepare("INSERT INTO season_entries (user_id, kind, title, summary, payload) VALUES (?, ?, ?, ?, ?)").run(
+export function addSeasonEntry(userId: number, entry: Omit<SeasonEntry, "id" | "date">): number {
+  const info = db.prepare("INSERT INTO season_entries (user_id, kind, title, summary, payload) VALUES (?, ?, ?, ?, ?)").run(
     userId,
     entry.kind,
     entry.title,
     entry.summary,
     entry.payload !== undefined ? JSON.stringify(entry.payload) : null,
   );
+  return Number(info.lastInsertRowid);
 }
 
 export function getSeason(userId: number, limit = 100): SeasonEntry[] {
@@ -240,4 +241,44 @@ export function getClubSessions(clubId: number): ClubSession[] {
 
 export function setClubPhilosophy(clubId: number, text: string): void {
   db.prepare("UPDATE clubs SET philosophy = ? WHERE id = ?").run(text.slice(0, 4000), clubId);
+}
+
+// ---- feedback (output ratings -> eval dataset) ----
+export function addFeedback(userId: number, f: { entryId?: number | null; kind: string; vote: 1 | -1; note?: string }): void {
+  db.prepare("INSERT INTO feedback (user_id, entry_id, kind, vote, note) VALUES (?, ?, ?, ?, ?)").run(
+    userId, f.entryId ?? null, f.kind, f.vote, (f.note ?? "").slice(0, 500),
+  );
+}
+
+export function feedbackCount(userId: number): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE user_id = ?").get(userId) as { n: number };
+  return row.n;
+}
+
+export function feedbackStats(clubId?: number): { kind: string; up: number; down: number }[] {
+  const rows = (clubId
+    ? db.prepare("SELECT f.kind, SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END) up, SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) down FROM feedback f JOIN users u ON u.id=f.user_id WHERE u.club_id = ? GROUP BY f.kind").all(clubId)
+    : db.prepare("SELECT kind, SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END) up, SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) down FROM feedback GROUP BY kind").all()
+  ) as { kind: string; up: number; down: number }[];
+  return rows;
+}
+
+// ---- club comments (bounded community) ----
+export interface ClubComment {
+  id: number;
+  text: string;
+  created_at: string;
+  author: string;
+}
+
+export function addClubComment(clubId: number, sessionId: number, userId: number, text: string): void {
+  db.prepare("INSERT INTO club_comments (club_id, session_id, user_id, text) VALUES (?, ?, ?, ?)").run(
+    clubId, sessionId, userId, text.slice(0, 1000),
+  );
+}
+
+export function getClubComments(sessionId: number): ClubComment[] {
+  return db
+    .prepare("SELECT c.id, c.text, c.created_at, u.name AS author FROM club_comments c JOIN users u ON u.id = c.user_id WHERE c.session_id = ? ORDER BY c.id")
+    .all(sessionId) as ClubComment[];
 }
