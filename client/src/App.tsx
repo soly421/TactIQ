@@ -13,6 +13,7 @@ import { Team } from "./pages/Team";
 import { Club } from "./pages/Club";
 import { Community } from "./pages/Community";
 import { Privacy } from "./pages/Privacy";
+import { Pricing } from "./pages/Pricing";
 import type { Settings, User } from "./types";
 
 const NAV = [
@@ -60,8 +61,11 @@ function TopBar() {
   async function planAction() {
     if (!settings) return;
     if (settings.billingConfigured) {
-      const path = settings.plan === "free" ? "/api/billing/checkout" : "/api/billing/portal";
-      const r = await sendJSON<{ url: string }>(path, {});
+      if (settings.plan === "free") {
+        window.dispatchEvent(new Event("tactiq:pricing")); // funnel through the plans page (annual upsell)
+        return;
+      }
+      const r = await sendJSON<{ url: string }>("/api/billing/portal", {});
       if (r.url) window.location.href = r.url;
       return;
     }
@@ -114,6 +118,9 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
 
   useEffect(() => {
     void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
+    const openPricing = () => setTab("pricing");
+    window.addEventListener("tactiq:pricing", openPricing);
+    return () => window.removeEventListener("tactiq:pricing", openPricing);
   }, []);
 
   return (
@@ -153,6 +160,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "club" && <Club user={user} />}
         {tab === "community" && <Community />}
         {tab === "privacy" && <Privacy />}
+        {tab === "pricing" && <Pricing go={setTab} />}
       </main>
     </div>
   );

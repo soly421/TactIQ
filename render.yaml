@@ -37,7 +37,9 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PRICE_ID_PRO
-        sync: false
+        sync: false # $14.99/mo monthly price
+      - key: STRIPE_PRICE_ID_PRO_ANNUAL
+        sync: false # $119.88/yr annual price (the default upsell)
       - key: STRIPE_PRICE_ID_CLUB_SEAT
         sync: false # per-seat monthly price for club licenses
       - key: RESEND_API_KEY

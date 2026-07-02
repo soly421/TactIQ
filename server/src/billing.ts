@@ -37,7 +37,8 @@ function uid(req: unknown): number {
   return (req as AuthedRequest).userId;
 }
 
-// Start a subscription checkout for the Pro tier.
+// Start a subscription checkout for the Pro tier. interval: "month" (default)
+// or "year" — annual uses STRIPE_PRICE_ID_PRO_ANNUAL when configured.
 billingRouter.post("/checkout", async (req, res) => {
   if (!stripeConfigured) {
     res.status(400).json({ error: "Billing is not configured on this server." });
@@ -49,10 +50,12 @@ billingRouter.post("/checkout", async (req, res) => {
     res.status(404).json({ error: "Account not found" });
     return;
   }
+  const annual = req.body?.interval === "year" && Boolean(process.env.STRIPE_PRICE_ID_PRO_ANNUAL);
+  const priceId = annual ? (process.env.STRIPE_PRICE_ID_PRO_ANNUAL as string) : (process.env.STRIPE_PRICE_ID_PRO as string);
   try {
     const session = await getStripe().checkout.sessions.create({
       mode: "subscription",
-      line_items: [{ price: process.env.STRIPE_PRICE_ID_PRO as string, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: String(userId),
       ...(billing.stripeCustomerId ? { customer: billing.stripeCustomerId } : { customer_email: billing.email }),
       subscription_data: { metadata: { tactiqUserId: String(userId) } },

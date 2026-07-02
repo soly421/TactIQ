@@ -99,6 +99,21 @@ function consumeMessage(userId: number): { ok: boolean; remaining: number } {
   return { ok: true, remaining: limit - used - 1 };
 }
 
+// Structured generations (sessions, formations, game plans) are the priciest
+// calls. Legit coaches never hit these ceilings; scripted abuse does.
+const STRUCTURED_PER_DAY: Record<Plan, number> = { free: 10, pro: 150 };
+
+function consumeStructured(userId: number): boolean {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `structcap:${userId}:${day}`;
+  const used = Number(kvGet(key) ?? 0);
+  if (used >= STRUCTURED_PER_DAY[planOf(userId)]) return false;
+  kvSet(key, String(used + 1));
+  return true;
+}
+
+const STRUCTURED_LIMIT_MSG = "Daily build limit reached — that's a lot of sessions, coach! It resets tomorrow.";
+
 function quotaError(userId: number): string {
   return `Daily message limit reached (${dailyLimit(userId)}). ${planOf(userId) === "free" ? "Upgrade to Pro for 10x messages and the flagship engine." : "Resets tomorrow."}`;
 }
@@ -251,6 +266,10 @@ api.post("/session-plan", async (req, res) => {
     res.status(400).json({ error: "ageGroup and theme are required" });
     return;
   }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    return;
+  }
   try {
     const schoolInfo = SCHOOLS.find((s) => s.id === school);
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
@@ -292,6 +311,10 @@ api.post("/session-scan", async (req, res) => {
     res.status(400).json({ error: "Attach a photo of your session sketch" });
     return;
   }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    return;
+  }
   try {
     const scanUser = userContent(`Digitize this session sketch.${notes ? ` Coach's notes: ${notes}` : ""}`, image);
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
@@ -318,6 +341,10 @@ api.post("/season-plan", async (req, res) => {
   const userId = uid(req);
   if (!entitlementsFor(planOf(userId)).seasonPlanner) {
     res.status(403).json(upgradeError("The season periodization planner is a Pro feature."));
+    return;
+  }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
     return;
   }
   const { weeks, focus, gamesPerWeek, practicesPerWeek } = req.body ?? {};
@@ -373,6 +400,10 @@ api.post("/library/:id/generate", async (req, res) => {
     res.status(403).json(upgradeError(`You've used all ${ent.libraryUnlocksPerMonth} free Library unlocks this month. Pro unlocks the whole catalog — all 907 sessions.`));
     return;
   }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    return;
+  }
   try {
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
       tier: tierFor(planOf(userId), "structured"),
@@ -412,6 +443,10 @@ api.post("/formation", async (req, res) => {
   const { format, ageGroup, style, squadNotes, opponentNotes } = req.body ?? {};
   if (!format || !ageGroup) {
     res.status(400).json({ error: "format and ageGroup are required" });
+    return;
+  }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
     return;
   }
   try {
@@ -496,6 +531,10 @@ api.post("/matchday/pregame", async (req, res) => {
   const { opponent, competition, opponentNotes, ourLineupThoughts, conditions } = req.body ?? {};
   if (!opponent) {
     res.status(400).json({ error: "opponent is required" });
+    return;
+  }
+  if (!consumeStructured(userId)) {
+    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
     return;
   }
   try {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getJSON, sendJSON } from "./api";
+import { getJSON } from "./api";
 
 // What the coach's plan includes, with live usage — drives every locked state.
 export interface Entitlements {
@@ -23,13 +23,8 @@ export function useEntitlements(): Entitlements | null {
   return ent;
 }
 
-// One-tap path to Pro: Stripe checkout when billing is configured, otherwise
-// point at the dev plan toggle.
-export async function goUpgrade(billingConfigured: boolean): Promise<void> {
-  if (billingConfigured) {
-    const r = await sendJSON<{ url: string }>("/api/billing/checkout", {});
-    if (r.url) window.location.href = r.url;
-    return;
-  }
-  alert("Billing isn't configured on this server — use the plan chip in the top bar to switch plans (dev mode).");
+// Every upgrade CTA funnels through the Plans page — the annual option
+// converts better than a blind jump into monthly checkout.
+export async function goUpgrade(_billingConfigured: boolean): Promise<void> {
+  window.dispatchEvent(new Event("tactiq:pricing"));
 }
