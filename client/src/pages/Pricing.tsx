@@ -86,6 +86,9 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
           <h3>🏛️ Club</h3>
           <div className="price"><b>$10</b><span className="muted small"> /coach/mo</span></div>
           <p className="muted small">Every coach gets Pro. The DOC gets the dashboard, the monthly report, philosophy distribution, and one invoice. Volume pricing above 25 seats.</p>
+          <div className="founding-offer">
+            🏆 <b>Founding Club offer</b> — the first 10 clubs get <b>50% off year one</b>, a founders' badge, and a direct line to the team. Code <code>FOUNDING50</code> at checkout.
+          </div>
           <button className="btn ghost" style={{ marginTop: "auto" }} onClick={() => go("club")}>
             License your club →
           </button>

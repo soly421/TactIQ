@@ -72,6 +72,7 @@ function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: num
       </table>
       {isAdmin && report.license.planTier !== "pro" && (
         <div className="no-print" style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="chip gold-chip">🏆 Founding Club: code <code>FOUNDING50</code> = 50% off year one</span>
           <b>License the whole club:</b>
           <label className="field" style={{ margin: 0 }}>
             <input type="number" min={1} max={200} value={seats} style={{ width: 80 }} onChange={(e) => setSeats(Number(e.target.value))} />

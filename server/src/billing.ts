@@ -55,6 +55,7 @@ billingRouter.post("/checkout", async (req, res) => {
   try {
     const session = await getStripe().checkout.sessions.create({
       mode: "subscription",
+      allow_promotion_codes: true,
       line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: String(userId),
       ...(billing.stripeCustomerId ? { customer: billing.stripeCustomerId } : { customer_email: billing.email }),
@@ -88,6 +89,7 @@ billingRouter.post("/club-checkout", async (req, res) => {
   try {
     const session = await getStripe().checkout.sessions.create({
       mode: "subscription",
+      allow_promotion_codes: true,
       line_items: [{ price: process.env.STRIPE_PRICE_ID_CLUB_SEAT, quantity: seats }],
       client_reference_id: `club:${club.id}`,
       ...(clubBilling?.stripeCustomerId ? { customer: clubBilling.stripeCustomerId } : { customer_email: billing?.email }),
