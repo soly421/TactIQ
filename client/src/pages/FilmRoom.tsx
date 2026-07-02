@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { streamSSE } from "../api";
+import { useEntitlements } from "../entitlements";
 import { Markdown } from "../components/Markdown";
 import { RateBar } from "../components/RateBar";
 import { useGamify } from "../components/Gamify";
@@ -16,6 +17,7 @@ const MAX_DIM = 960;
 // extracts keyframes locally, and the vision model reads the sequence like film.
 export function FilmRoom() {
   const { celebrate } = useGamify();
+  const ent = useEntitlements();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [frames, setFrames] = useState<Frame[]>([]);
   const [extracting, setExtracting] = useState(false);
@@ -112,7 +114,14 @@ export function FilmRoom() {
   return (
     <div>
       <div className="card" style={{ marginBottom: 18 }}>
-        <h3>🎞️ Break down your game film</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>🎞️ Break down your game film</h3>
+          {ent && ent.filmClipsLeft !== null && (
+            <span className="chip" style={{ color: ent.filmClipsLeft === 0 ? "var(--red)" : "var(--gold)" }}>
+              {ent.filmClipsLeft} free clip{ent.filmClipsLeft === 1 ? "" : "s"} left this month · Pro is unlimited
+            </span>
+          )}
+        </div>
         <p className="muted small">
           Upload a clip — a Veo/Trace highlight export or a phone video (10-60 seconds works best). TactIQ extracts keyframes
           <b> in your browser</b> (the video never uploads) and your AI analyst reads the sequence like film: shape, spacing,

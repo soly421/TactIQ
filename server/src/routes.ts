@@ -20,6 +20,7 @@ import { questState } from "./quests.js";
 import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
 import { stripeConfigured } from "./billing.js";
 import { maybeResyncIcs } from "./schedule.js";
+import { bumpMonthly, entitlementsFor, getStaff, monthlyCount, signOrCheckAdvisor, upgradeError } from "./entitlements.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
 
 import { requireAuth, type AuthedRequest } from "./auth.js";
@@ -119,6 +120,10 @@ api.get("/advisors", (req, res) => {
 });
 
 api.post("/advisors/custom", (req, res) => {
+  if (!entitlementsFor(planOf(uid(req))).customAdvisors) {
+    res.status(403).json(upgradeError("Building custom advisors is a Pro feature."));
+    return;
+  }
   const { name, emoji, tagline, category, goodFor, philosophy } = req.body ?? {};
   if (!name || !philosophy) {
     res.status(400).json({ error: "name and philosophy are required" });
@@ -163,6 +168,14 @@ api.post("/chat", async (req, res) => {
   if (!quota.ok) {
     res.status(429).json({ error: quotaError(userId) });
     return;
+  }
+  // Free tier: the first N advisors you talk to become your signed staff.
+  if (builtIn) {
+    const ent = entitlementsFor(planOf(userId));
+    if (!signOrCheckAdvisor(userId, advisorId, ent.maxStaffAdvisors)) {
+      res.status(403).json(upgradeError(`Your staff is full (${ent.maxStaffAdvisors} advisors on the free plan). Upgrade to Pro to work with all 15 coaching minds.`));
+      return;
+    }
   }
   const gamify = award(userId, "chat", advisorId);
   const system = builtIn
@@ -303,6 +316,10 @@ The coach has photographed a hand-drawn training session (whiteboard, notebook, 
 // ---- Season periodization planner ----
 api.post("/season-plan", async (req, res) => {
   const userId = uid(req);
+  if (!entitlementsFor(planOf(userId)).seasonPlanner) {
+    res.status(403).json(upgradeError("The season periodization planner is a Pro feature."));
+    return;
+  }
   const { weeks, focus, gamesPerWeek, practicesPerWeek } = req.body ?? {};
   const squad = getSquad(userId);
   try {
@@ -351,6 +368,11 @@ api.post("/library/:id/generate", async (req, res) => {
     res.json({ plan: cached, cached: true });
     return;
   }
+  const ent = entitlementsFor(planOf(userId));
+  if (monthlyCount("libunlock", userId) >= ent.libraryUnlocksPerMonth) {
+    res.status(403).json(upgradeError(`You've used all ${ent.libraryUnlocksPerMonth} free Library unlocks this month. Pro unlocks the whole catalog — all 907 sessions.`));
+    return;
+  }
   try {
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
       tier: tierFor(planOf(userId), "structured"),
@@ -374,6 +396,7 @@ Give it a specific, evocative title of your own (not the catalog label).`,
     });
 
     saveLibraryPlan(userId, template.id, plan_);
+    bumpMonthly("libunlock", userId);
     const gamify = award(userId, "library");
     const entryId = addSeasonEntry(userId, { kind: "session", title: `Library: ${template.title}`, summary: `${template.phase} · ${template.format}`, payload: plan_ });
     res.json({ plan: plan_, award: gamify, entryId });
@@ -508,6 +531,10 @@ You are the coach's professional assistant coach preparing a match briefing — 
 
 api.post("/matchday/live", async (req, res) => {
   const userId = uid(req);
+  if (!entitlementsFor(planOf(userId)).liveBench) {
+    res.status(403).json(upgradeError("Live Bench — real-time sideline adjustments during the game — is a Pro feature."));
+    return;
+  }
   const { messages } = req.body as { messages: { role: "user" | "assistant"; content: string }[] };
   if (!Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: "messages are required" });
@@ -616,11 +643,17 @@ api.post("/film-analysis", async (req, res) => {
     res.status(400).json({ error: "Maximum 10 frames per clip" });
     return;
   }
+  const entF = entitlementsFor(planOf(userId));
+  if (monthlyCount("filmclip", userId) >= entF.filmClipsPerMonth) {
+    res.status(403).json(upgradeError(`Free coaches get ${entF.filmClipsPerMonth} Film Room clip per month. Pro is unlimited.`));
+    return;
+  }
   const quota = consumeMessage(userId);
   if (!quota.ok) {
     res.status(429).json({ error: quotaError(userId) });
     return;
   }
+  bumpMonthly("filmclip", userId);
   const gamify = award(userId, "film");
 
   const content: Anthropic.Beta.BetaContentBlockParam[] = [];
@@ -719,8 +752,11 @@ api.post("/teams", (req, res) => {
     res.status(400).json({ error: "teamName and ageGroup are required" });
     return;
   }
-  if (listTeams(userId).length >= 8) {
-    res.status(400).json({ error: "Maximum of 8 teams per account." });
+  const maxTeams = entitlementsFor(planOf(userId)).maxTeams;
+  if (listTeams(userId).length >= maxTeams) {
+    res.status(maxTeams === 1 ? 403 : 400).json(
+      maxTeams === 1 ? upgradeError("Multiple teams is a Pro feature — run up to 8 squads with separate memory.") : { error: "Maximum of 8 teams per account." },
+    );
     return;
   }
   const teamId = createTeam(userId, sanitizeSquad(s));
@@ -782,6 +818,26 @@ api.put("/settings/plan", (req, res) => {
   }
   setPlanTier(userId, newPlan);
   res.json(settingsPayload(userId));
+});
+
+// ---- Entitlements: what this coach's plan includes, with live usage ----
+api.get("/entitlements", (req, res) => {
+  const userId = uid(req);
+  const plan = planOf(userId);
+  const ent = entitlementsFor(plan);
+  const cap = (n: number) => (n >= Number.MAX_SAFE_INTEGER ? null : n);
+  res.json({
+    plan,
+    staff: getStaff(userId),
+    maxStaffAdvisors: cap(ent.maxStaffAdvisors),
+    customAdvisors: ent.customAdvisors,
+    libraryUnlocksLeft: ent.libraryUnlocksPerMonth >= Number.MAX_SAFE_INTEGER ? null : Math.max(0, ent.libraryUnlocksPerMonth - monthlyCount("libunlock", userId)),
+    filmClipsLeft: ent.filmClipsPerMonth >= Number.MAX_SAFE_INTEGER ? null : Math.max(0, ent.filmClipsPerMonth - monthlyCount("filmclip", userId)),
+    liveBench: ent.liveBench,
+    seasonPlanner: ent.seasonPlanner,
+    maxTeams: ent.maxTeams,
+    billingConfigured: stripeConfigured,
+  });
 });
 
 // ---- Home: the assistant coach's desk, aggregated ----

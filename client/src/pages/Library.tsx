@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
+import { goUpgrade, useEntitlements } from "../entitlements";
 import type { AwardResult, SessionPlan, SessionTemplate } from "../types";
 
 const PHASES = [
@@ -22,6 +23,7 @@ const LEVELS = ["all", "foundation", "intermediate", "advanced"];
 
 export function Library() {
   const { celebrate } = useGamify();
+  const ent = useEntitlements();
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
   const [collection, setCollection] = useState<"signature" | "blueprint" | "all">("signature");
   const [phase, setPhase] = useState("all");
@@ -125,8 +127,22 @@ export function Library() {
         </label>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
-      <p className="muted small" style={{ margin: "0 0 10px" }}>{list.length.toLocaleString()} sessions match</p>
+      {error && (
+        <div className="error-box">
+          {error}
+          {/upgrade|Pro/i.test(error) && (
+            <button className="btn" style={{ marginLeft: 10, fontSize: 12.5, padding: "6px 12px" }} onClick={() => void goUpgrade(ent?.billingConfigured ?? false)}>
+              👑 Go Pro
+            </button>
+          )}
+        </div>
+      )}
+      <p className="muted small" style={{ margin: "0 0 10px" }}>
+        {list.length.toLocaleString()} sessions match
+        {ent?.libraryUnlocksLeft !== null && ent && (
+          <> · <b style={{ color: ent.libraryUnlocksLeft === 0 ? "var(--red)" : "var(--gold)" }}>{ent.libraryUnlocksLeft} free unlock{ent.libraryUnlocksLeft === 1 ? "" : "s"} left this month</b> — Pro is unlimited</>
+        )}
+      </p>
 
       <div className="grid cols-2">
         {list.slice(0, 60).map((t) => (

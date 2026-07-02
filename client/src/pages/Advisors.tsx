@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getJSON, sendJSON, streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
+import { goUpgrade, useEntitlements } from "../entitlements";
 import type { Advisor, AwardResult, ChatMessage } from "../types";
 
 const CATEGORIES = ["all", "attacking", "defending", "possession", "transition", "development", "management"];
@@ -12,6 +13,7 @@ export function Advisors() {
   const [filter, setFilter] = useState("all");
   const [active, setActive] = useState<Advisor | null>(null);
   const [building, setBuilding] = useState(false);
+  const ent = useEntitlements();
 
   async function load() {
     setAdvisors(await getJSON<Advisor[]>("/api/advisors"));
@@ -23,6 +25,10 @@ export function Advisors() {
   if (active) return <ChatView advisor={active} onBack={() => setActive(null)} />;
 
   const list = filter === "all" ? advisors : advisors.filter((a) => a.category === filter);
+  const staffFull = ent !== null && ent.maxStaffAdvisors !== null && ent.staff.length >= ent.maxStaffAdvisors;
+  const onStaff = (a: Advisor) => ent?.staff.includes(a.id) ?? false;
+  const isLocked = (a: Advisor) => !a.custom && staffFull && !onStaff(a);
+  const slotsLeft = ent?.maxStaffAdvisors !== null && ent ? ent.maxStaffAdvisors - ent.staff.length : null;
 
   return (
     <div className="fade-in">
@@ -31,9 +37,17 @@ export function Advisors() {
           <h1>The Advisor Room</h1>
           <p className="sub">
             {advisors.length} coaching minds, every school of thought. Each one shows what team it's <b>good for</b> — or build your own.
+            {ent?.maxStaffAdvisors !== null && ent && (
+              <> On the free plan you <b>sign {ent.maxStaffAdvisors} advisors to your staff</b> — the first ones you talk to.
+              {slotsLeft !== null && slotsLeft > 0 ? ` ${slotsLeft} slot${slotsLeft === 1 ? "" : "s"} left.` : " Your staff is set — Pro unlocks everyone."}</>
+            )}
           </p>
         </div>
-        <button className="btn" onClick={() => setBuilding(true)}>🧬 Build Your Own</button>
+        {ent?.customAdvisors === false ? (
+          <button className="btn ghost" onClick={() => void goUpgrade(ent.billingConfigured)}>👑 Build Your Own (Pro)</button>
+        ) : (
+          <button className="btn" onClick={() => setBuilding(true)}>🧬 Build Your Own</button>
+        )}
       </div>
 
       {building && <AdvisorBuilder onDone={(a) => { setBuilding(false); void load(); if (a) setActive(a); }} />}
@@ -47,26 +61,36 @@ export function Advisors() {
       </div>
 
       <div className="grid cols-3">
-        {list.map((a) => (
-          <div key={a.id} className="card clickable advisor-card" onClick={() => setActive(a)}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span className="emoji">{a.emoji}</span>
-              {a.custom && <span className="chip" style={{ fontSize: 10, color: "var(--accent)" }}>YOURS</span>}
+        {list.map((a) => {
+          const locked = isLocked(a);
+          return (
+            <div
+              key={a.id}
+              className={`card clickable advisor-card ${locked ? "locked" : ""}`}
+              onClick={() => (locked ? void goUpgrade(ent?.billingConfigured ?? false) : setActive(a))}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span className="emoji">{a.emoji}</span>
+                {a.custom && <span className="chip" style={{ fontSize: 10, color: "var(--accent)" }}>YOURS</span>}
+                {!a.custom && onStaff(a) && <span className="chip" style={{ fontSize: 10, color: "var(--gold)" }}>⭐ ON YOUR STAFF</span>}
+                {locked && <span className="chip" style={{ fontSize: 10, color: "var(--gold)" }}>👑 PRO</span>}
+              </div>
+              <h3 style={{ margin: 0 }}>{a.name}</h3>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span className={`cat ${a.category}`}>{a.category}</span>
+                {a.formats?.slice(0, 4).map((f) => (
+                  <span key={f} className="fmt-chip">{f}</span>
+                ))}
+              </div>
+              <p className="muted small" style={{ margin: "4px 0 0" }}>{a.tagline}</p>
+              <div className="goodfor">
+                <span className="goodfor-label">Good for</span>
+                <p>{a.goodFor}</p>
+              </div>
+              {locked && <div className="lock-cta">👑 Upgrade to add {a.name.split(" ")[1] ?? a.name} to your staff →</div>}
             </div>
-            <h3 style={{ margin: 0 }}>{a.name}</h3>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <span className={`cat ${a.category}`}>{a.category}</span>
-              {a.formats?.slice(0, 4).map((f) => (
-                <span key={f} className="fmt-chip">{f}</span>
-              ))}
-            </div>
-            <p className="muted small" style={{ margin: "4px 0 0" }}>{a.tagline}</p>
-            <div className="goodfor">
-              <span className="goodfor-label">Good for</span>
-              <p>{a.goodFor}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

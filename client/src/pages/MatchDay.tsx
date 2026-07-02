@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getJSON, sendJSON, streamSSE } from "../api";
+import { goUpgrade, useEntitlements } from "../entitlements";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
 import { RateBar } from "../components/RateBar";
@@ -16,6 +17,7 @@ const clean = (s: string) => s.replace(/#+\s?/g, "").replace(/\s+/g, " ").trim()
 
 export function MatchDay() {
   const [seg, setSeg] = useState("pre");
+  const ent = useEntitlements();
   const [squad, setSquad] = useState<SquadProfile | null>(null);
   const [gameMemory, setGameMemory] = useState<SeasonEntry[]>([]);
 
@@ -58,7 +60,13 @@ export function MatchDay() {
         ))}
       </div>
       {seg === "pre" && <PreGame defaultOpponent={squad?.nextOpponent ?? ""} />}
-      {seg === "live" && <LiveBench />}
+      {seg === "live" && (ent === null || ent.liveBench ? <LiveBench /> : (
+        <div className="pro-gate">
+          <h3>📣 Live Bench is a Pro feature</h3>
+          <p>Real-time sideline adjustments mid-game, in under 120 words — shape tweaks, personnel calls, restart tactics, and a composure cue. The moment you want it most is the moment you're losing.</p>
+          <button className="btn" onClick={() => void goUpgrade(ent.billingConfigured)}>👑 Upgrade to Pro</button>
+        </div>
+      ))}
       {seg === "post" && <PostGame />}
       {gameMemory.length > 0 && (
         <div className="card" style={{ marginTop: 18 }}>

@@ -435,3 +435,15 @@ ul.points li { margin: 4px 0; font-size: 13.5px; line-height: 1.5; }
 .b-track { flex: 1; height: 8px; background: var(--bg-elev, rgba(255,255,255,0.06)); border-radius: 4px; overflow: hidden; }
 .b-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
 .b-count { width: 30px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- entitlement locked states ---------- */
+.advisor-card.locked { opacity: 0.72; }
+.advisor-card.locked .emoji { filter: grayscale(0.7); }
+.advisor-card.locked:hover { opacity: 0.95; border-color: var(--gold); }
+.lock-cta { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--gold); }
+.pro-gate {
+  border: 1px solid var(--gold); border-radius: 14px; padding: 22px 24px; text-align: center;
+  background: linear-gradient(135deg, rgba(232,182,76,0.08), rgba(255,122,26,0.05));
+}
+.pro-gate h3 { margin: 0 0 6px; }
+.pro-gate p { color: var(--muted); font-size: 13.5px; max-width: 52ch; margin: 0 auto 12px; }

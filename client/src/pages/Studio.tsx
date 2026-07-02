@@ -4,6 +4,7 @@ import { FormationLab } from "./FormationLab";
 import { Playbook } from "./Playbook";
 import { FieldBoard } from "./FieldBoard";
 import { savePlanOffline } from "../savedPlans";
+import { goUpgrade, useEntitlements } from "../entitlements";
 import { sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
@@ -19,6 +20,7 @@ const SEGMENTS = [
 ];
 
 export function Studio() {
+  const ent = useEntitlements();
   const [seg, setSeg] = useState("sessions");
 
   return (
@@ -36,7 +38,13 @@ export function Studio() {
       {seg === "scan" && <SessionScan />}
       {seg === "board" && <FieldBoard />}
       {seg === "formations" && <FormationLab />}
-      {seg === "season" && <SeasonPlanner />}
+      {seg === "season" && (ent === null || ent.seasonPlanner ? <SeasonPlanner /> : (
+        <div className="pro-gate">
+          <h3>📅 The Season Planner is a Pro feature</h3>
+          <p>A periodized 8-16 week curriculum built for your team — coherent blocks, age-appropriate load, themes that connect training to weekend games.</p>
+          <button className="btn" onClick={() => void goUpgrade(ent.billingConfigured)}>👑 Upgrade to Pro</button>
+        </div>
+      ))}
       {seg === "playbook" && <Playbook />}
     </div>
   );
