@@ -35,9 +35,6 @@ export function FormationLab() {
 
   return (
     <div className="fade-in">
-      <h1>Formation Lab</h1>
-      <p className="sub">Get a formation and full game model matched to your format, age group, and squad — visualized on the field.</p>
-
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="form-grid">
           <label className="field">

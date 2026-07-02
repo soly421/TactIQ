@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 export interface SquadProfile {
   teamName: string;
+  coachExperience: "new" | "intermediate" | "experienced";
   ageGroup: string;
   format: string; // 4v4 | 7v7 | 9v9 | 11v11
   level: string; // rec | travel | academy
@@ -38,11 +39,31 @@ export interface Usage {
   messages: number;
 }
 
+export interface CustomAdvisor {
+  id: string;
+  name: string;
+  emoji: string;
+  tagline: string;
+  category: string;
+  goodFor: string;
+  philosophy: string;
+  custom: true;
+}
+
+export interface XpPoint {
+  t: string; // ISO timestamp
+  xp: number; // cumulative xp after the event
+}
+
 export interface StoreData {
   squad: SquadProfile | null;
   season: SeasonEntry[];
   progress: Progress;
   usage: Usage;
+  settings: { plan: "free" | "pro" };
+  customAdvisors: CustomAdvisor[];
+  xpHistory: XpPoint[];
+  libraryPlans: Record<string, unknown>; // templateId -> hydrated plan
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +79,10 @@ const DEFAULTS: StoreData = {
   season: [],
   progress: { xp: 0, streak: 0, lastActiveDay: "", badges: [], counts: {}, advisorsUsed: [] },
   usage: { day: today(), messages: 0 },
+  settings: { plan: "free" },
+  customAdvisors: [],
+  xpHistory: [],
+  libraryPlans: {},
 };
 
 let cache: StoreData | null = null;

@@ -214,3 +214,30 @@ export const MOCK_CHAT_REPLY =
 
 export const MOCK_GUIDANCE =
   "## Demo mode\n\nSet `ANTHROPIC_API_KEY` on the server to get live, customized coaching guidance.\n\n### What you'd get here\nA structured answer tailored to your age group, team level, and the problem you described — covering the tactical picture, 2-3 training activities to fix it, and what to say to your players (and how to say it for their age).";
+
+export const MOCK_GAME_PLAN = {
+  matchTitle: "vs Demo United — League Match",
+  keysToTheGame: [
+    "Win the midfield duel: their #8 starts every attack",
+    "Beat their high line with early balls behind",
+    "Own restarts — they concede from corners",
+  ],
+  inPossession: ["Build 2+1 with the keeper", "Wingers stay high and wide to stretch their back three", "Look for the striker's runs behind on the first touch forward"],
+  outOfPossession: ["Mid-block, press on their back-pass trigger", "Deny the switch: press the ball-side, screen the far side", "Recover central first, then out"],
+  setPieces: ["Corners: near-post overload with a back-post runner", "Defending: zonal front post, man on their tall #5", "Quick free kicks whenever their keeper is chatting"],
+  matchups: [
+    { zone: "Their left wing (fast #11)", plan: "Fullback drops earlier; winger tracks the overlap", exploit: false },
+    { zone: "Behind their fullbacks", plan: "Early diagonals for our wingers to run onto", exploit: true },
+  ],
+  firstTenMinutes: ["High energy, simple passes, no risks in our third", "First restart: try corner routine #1", "Test their keeper with any shot from the D"],
+  pregameTalk: "Remember how hard we worked on playing forward this week? Today's the day it shows. Be brave with the ball, be first to every loose one, and pick each other up after mistakes. Have FUN out there — that's an order.",
+  benchNotes: ["Rotate wingers every 12-15 min to keep pace advantage", "Save your most composed defender for the last 10 if protecting a lead"],
+  ifChasing: ["Push a mid higher into a 2-3-2 press", "Wingers pinch inside; fullbacks provide width", "Fast restarts everywhere"],
+  ifProtecting: ["Drop the block 10 yards, stay compact", "Striker stays high as the out-ball", "Use every legal second on restarts"],
+};
+
+export const MOCK_LIVE_REPLY =
+  "[Demo mode]\n\n**Down 1-0 vs a low block — three moves:**\n1. Switch faster: two-touch max in midfield, make their block slide until it tears.\n2. Push your fullbacks past their wingers — force their block to widen, opening the D.\n3. Next corner: run routine #1, their keeper stays on his line.\n\nStay calm on the sideline — the kids play like you look.";
+
+export const MOCK_DEBRIEF =
+  "## What the Data Says\n[Demo mode — set ANTHROPIC_API_KEY for live analysis]\nYour numbers suggest a game you controlled but didn't finish: plenty of territory, low chance quality.\n\n## What Went Well\n- Build-up under pressure held up\n- Defensive shape between boxes\n\n## Fix This Week\n- Final-third decisions: cutback vs cross\n- Box arrivals: nobody attacking the near post\n\n## Player Messages\n- Keeper: brilliant distribution, keep it\n- Striker: your movement created everything, goals will come\n\n## Next Session Focus\nFinishing from cutbacks — the Library's \"Put It In The Mixer\" adapted to your age group.";

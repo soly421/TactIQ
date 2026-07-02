@@ -49,9 +49,6 @@ export function Playbook() {
 
   return (
     <div className="fade-in">
-      <h1>The Playbook</h1>
-      <p className="sub">Structured tactical guidance: describe the problem, get the picture, the fix, the training plan, and the exact words to use with your players.</p>
-
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="form-grid">
           <label className="field">

@@ -2,7 +2,7 @@ import { loadStore, saveStore, today, type Progress } from "./store.js";
 
 export const FREE_DAILY_MESSAGES = 30;
 
-export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad";
+export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday";
 
 const XP_RULES: Record<XpAction, number> = {
   chat: 5,
@@ -10,6 +10,9 @@ const XP_RULES: Record<XpAction, number> = {
   formation: 40,
   guidance: 25,
   squad: 15,
+  "advisor-built": 60,
+  library: 35,
+  matchday: 45,
 };
 
 export const LEVELS = [
@@ -44,6 +47,10 @@ export const BADGES: BadgeDef[] = [
   { id: "streak-3", name: "On Fire", emoji: "🔥", description: "3-day coaching streak", earned: (p) => p.streak >= 3 },
   { id: "streak-7", name: "Unstoppable", emoji: "💥", description: "7-day coaching streak", earned: (p) => p.streak >= 7 },
   { id: "squad-set", name: "Squad Assembled", emoji: "🛡️", description: "Set up your team profile", earned: (p) => (p.counts.squad ?? 0) >= 1 },
+  { id: "creator", name: "Mad Scientist", emoji: "🧬", description: "Build your own custom advisor", earned: (p) => (p.counts["advisor-built"] ?? 0) >= 1 },
+  { id: "librarian", name: "Librarian", emoji: "📖", description: "Unlock 3 sessions from the Library", earned: (p) => (p.counts.library ?? 0) >= 3 },
+  { id: "gameday", name: "Game Day Ready", emoji: "📣", description: "Prepare your first match with Match Day", earned: (p) => (p.counts.matchday ?? 0) >= 1 },
+  { id: "full-staff", name: "Full Staff", emoji: "🎬", description: "Run pre-game, live, and post-game in Match Day", earned: (p) => (p.counts.matchday ?? 0) >= 3 },
 ];
 
 export function levelFor(xp: number) {
@@ -80,6 +87,9 @@ export function award(action: XpAction, advisorId?: string): AwardResult {
     p.badges.push(b.id);
     return { id: b.id, name: b.name, emoji: b.emoji, description: b.description };
   });
+
+  store.xpHistory.push({ t: new Date().toISOString(), xp: p.xp });
+  if (store.xpHistory.length > 500) store.xpHistory.splice(0, store.xpHistory.length - 500);
 
   saveStore();
   return { xpGained: XP_RULES[action], newBadges, leveledUp: levelFor(p.xp).level > before };

@@ -4,6 +4,9 @@ export interface Advisor {
   emoji: string;
   tagline: string;
   category: string;
+  goodFor: string;
+  formats: string[];
+  custom: boolean;
 }
 
 export interface Point {
@@ -85,6 +88,9 @@ export interface AwardResult {
 
 export interface Progress {
   xp: number;
+  xpToday: number;
+  xpHistory: { t: string; xp: number }[];
+  plan: "free" | "pro";
   level: { level: number; title: string; xp: number; nextXp: number | null; nextTitle: string | null };
   streak: number;
   counts: Record<string, number>;
@@ -96,6 +102,7 @@ export interface Progress {
 
 export interface SquadProfile {
   teamName: string;
+  coachExperience: "new" | "intermediate" | "experienced";
   ageGroup: string;
   format: string;
   level: string;
@@ -116,4 +123,45 @@ export interface SeasonEntry {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+export interface School {
+  id: string;
+  name: string;
+  region: string;
+  emoji: string;
+  description: string;
+}
+
+export interface SessionTemplate {
+  id: string;
+  school: string;
+  title: string;
+  format: string;
+  zone: string;
+  ageBand: string;
+  theme: string;
+  description: string;
+  unlocked: boolean;
+}
+
+export interface Settings {
+  plan: "free" | "pro";
+  chatModel: string;
+  structuredModel: string;
+  dailyLimit: number;
+}
+
+export interface GamePlan {
+  matchTitle: string;
+  keysToTheGame: string[];
+  inPossession: string[];
+  outOfPossession: string[];
+  setPieces: string[];
+  matchups: { zone: string; plan: string; exploit: boolean }[];
+  firstTenMinutes: string[];
+  pregameTalk: string;
+  benchNotes: string[];
+  ifChasing: string[];
+  ifProtecting: string[];
 }

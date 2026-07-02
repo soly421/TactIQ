@@ -1,24 +1,30 @@
-import { useState } from "react";
-import { sendJSON } from "../api";
-import { PitchDiagram } from "../components/PitchDiagram";
+import { useEffect, useState } from "react";
+import { getJSON, sendJSON } from "../api";
+import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
-import type { AwardResult, SessionPlan } from "../types";
+import type { AwardResult, School, SessionPlan } from "../types";
 
-const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17+"];
+const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17+", "HS"];
 
 export function SessionStudio() {
   const { celebrate } = useGamify();
+  const [schools, setSchools] = useState<School[]>([]);
   const [form, setForm] = useState({
     ageGroup: "U10",
     playersAvailable: "12",
     durationMinutes: "75",
     theme: "",
     level: "travel",
+    school: "",
     notes: "",
   });
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    void getJSON<{ schools: School[] }>("/api/library").then((r) => setSchools(r.schools)).catch(() => {});
+  }, []);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -35,6 +41,7 @@ export function SessionStudio() {
         ...form,
         playersAvailable: Number(form.playersAvailable) || undefined,
         durationMinutes: Number(form.durationMinutes) || 75,
+        school: form.school || undefined,
       });
       setPlan(res.plan);
       celebrate(res.award);
@@ -46,9 +53,6 @@ export function SessionStudio() {
 
   return (
     <div className="fade-in">
-      <h1>Session Studio</h1>
-      <p className="sub">Describe what you want to train — get a full session with visualized, animated drill diagrams. Saved to your season automatically.</p>
-
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="form-grid">
           <label className="field">
@@ -71,6 +75,16 @@ export function SessionStudio() {
               <option value="rec">Recreational</option>
               <option value="travel">Travel / Club</option>
               <option value="academy">Academy / Elite</option>
+              <option value="hs">High School</option>
+            </select>
+          </label>
+          <label className="field">
+            School of thought (optional)
+            <select value={form.school} onChange={(e) => set("school", e.target.value)}>
+              <option value="">TactIQ blend</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>
+              ))}
             </select>
           </label>
         </div>
@@ -103,60 +117,7 @@ export function SessionStudio() {
         </div>
       )}
 
-      {plan && (
-        <div className="fade-in">
-          <div className="hero" style={{ paddingBottom: 20 }}>
-            <h1 style={{ fontSize: 24 }}>{plan.title}</h1>
-            <p className="sub" style={{ margin: 0 }}>
-              {plan.ageGroup} · {plan.durationMinutes} min · {plan.theme}
-            </p>
-          </div>
-
-          <div className="grid cols-2" style={{ marginBottom: 16 }}>
-            <div className="card">
-              <h3>🎯 Objectives</h3>
-              <ul className="points">{plan.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
-            </div>
-            <div className="card">
-              <h3>🎒 Equipment</h3>
-              <ul className="points">{plan.equipment.map((o, i) => <li key={i}>{o}</li>)}</ul>
-            </div>
-          </div>
-
-          {plan.drills.map((d, i) => (
-            <div key={i} className="card drill">
-              <div className="drill-head">
-                <div>
-                  <span className="phase-tag">{d.phase.replace(/-/g, " ")}</span>
-                  <h3 style={{ margin: "2px 0 4px" }}>
-                    {i + 1}. {d.name}
-                  </h3>
-                </div>
-                <span className="chip">{d.durationMinutes} min · {d.area}</span>
-              </div>
-              <div className="grid cols-2" style={{ alignItems: "start" }}>
-                <PitchDiagram diagram={d.diagram} />
-                <div>
-                  <p className="small" style={{ lineHeight: 1.6 }}>{d.organization}</p>
-                  <h3 style={{ color: "var(--accent)", fontSize: 14 }}>Coaching points</h3>
-                  <ul className="points">{d.coachingPoints.map((c, j) => <li key={j}>{c}</li>)}</ul>
-                  {d.progressions.length > 0 && (
-                    <>
-                      <h3 style={{ fontSize: 14 }}>Progressions</h3>
-                      <ul className="points">{d.progressions.map((c, j) => <li key={j}>{c}</li>)}</ul>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          <div className="card">
-            <h3>🧠 Coach reminders</h3>
-            <ul className="points">{plan.coachReminders.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          </div>
-        </div>
-      )}
+      {plan && <SessionPlanView plan={plan} />}
     </div>
   );
 }

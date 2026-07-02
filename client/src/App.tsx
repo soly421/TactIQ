@@ -1,25 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GamifyProvider, useGamify } from "./components/Gamify";
+import { getJSON, sendJSON } from "./api";
 import { Dashboard } from "./pages/Dashboard";
+import { Chat } from "./pages/Chat";
 import { Advisors } from "./pages/Advisors";
-import { SessionStudio } from "./pages/SessionStudio";
-import { FormationLab } from "./pages/FormationLab";
-import { Playbook } from "./pages/Playbook";
+import { Library } from "./pages/Library";
+import { Studio } from "./pages/Studio";
+import { MatchDay } from "./pages/MatchDay";
 import { Team } from "./pages/Team";
 import { Community } from "./pages/Community";
+import type { Settings } from "./types";
 
 const TABS = [
   { id: "home", label: "Home" },
+  { id: "chat", label: "Chat" },
   { id: "advisors", label: "Advisors" },
-  { id: "sessions", label: "Sessions" },
-  { id: "formations", label: "Formations" },
-  { id: "playbook", label: "Playbook" },
+  { id: "library", label: "Library" },
+  { id: "studio", label: "Labs" },
+  { id: "matchday", label: "Match Day" },
   { id: "team", label: "My Team" },
   { id: "community", label: "Community" },
 ];
 
 function Header() {
-  const { progress } = useGamify();
+  const { progress, refresh } = useGamify();
+  const [settings, setSettings] = useState<Settings | null>(null);
+
+  useEffect(() => {
+    void getJSON<Settings>("/api/settings").then(setSettings).catch(() => {});
+  }, [progress?.plan]);
+
+  async function togglePlan() {
+    if (!settings) return;
+    const next = settings.plan === "free" ? "pro" : "free";
+    const updated = await sendJSON<Settings>("/api/settings/plan", { plan: next }, "PUT");
+    setSettings(updated);
+    void refresh();
+  }
+
   return (
     <div className="header">
       <div className="logo">
@@ -32,11 +50,19 @@ function Header() {
             <span className="chip">
               <span className="flame">🔥</span> {progress.streak}
             </span>
-            <span className="chip">⚡ {progress.xp.toLocaleString()} XP</span>
             <span className="chip quota">
-              <b>{progress.usage.limit - progress.usage.used}</b>/{progress.usage.limit} msgs
+              <b>{Math.max(0, progress.usage.limit - progress.usage.used)}</b>/{progress.usage.limit}
             </span>
           </>
+        )}
+        {settings && (
+          <button
+            className={`chip plan-chip ${settings.plan}`}
+            title={`Chat: ${settings.chatModel} · Visualizations: ${settings.structuredModel}. Click to switch plan.`}
+            onClick={() => void togglePlan()}
+          >
+            {settings.plan === "pro" ? "👑 PRO" : "FREE"}
+          </button>
         )}
       </div>
     </div>
@@ -57,12 +83,19 @@ function Shell() {
         ))}
       </div>
       {tab === "home" && <Dashboard go={setTab} />}
+      {tab === "chat" && <Chat />}
       {tab === "advisors" && <Advisors />}
-      {tab === "sessions" && <SessionStudio />}
-      {tab === "formations" && <FormationLab />}
-      {tab === "playbook" && <Playbook />}
+      {tab === "library" && <Library />}
+      {tab === "studio" && <Studio />}
+      {tab === "matchday" && <MatchDay />}
       {tab === "team" && <Team />}
       {tab === "community" && <Community />}
+
+      {tab !== "chat" && (
+        <button className="fab" title="Ask Coach T" onClick={() => setTab("chat")}>
+          💬
+        </button>
+      )}
     </div>
   );
 }

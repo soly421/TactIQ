@@ -146,3 +146,38 @@ export const FORMATION_ANALYSIS_SCHEMA = {
   ],
   additionalProperties: false,
 } as const;
+
+export const GAME_PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    matchTitle: { type: "string", description: "e.g. 'vs Rapids FC — League, Saturday'" },
+    keysToTheGame: { type: "array", items: { type: "string" }, description: "3-5 things that decide this game" },
+    inPossession: { type: "array", items: { type: "string" } },
+    outOfPossession: { type: "array", items: { type: "string" } },
+    setPieces: { type: "array", items: { type: "string" }, description: "Attacking and defending restart plans" },
+    matchups: {
+      type: "array",
+      description: "Key individual or zonal matchups to exploit or protect",
+      items: {
+        type: "object",
+        properties: {
+          zone: { type: "string" },
+          plan: { type: "string" },
+          exploit: { type: "boolean", description: "true = attack this matchup, false = protect it" },
+        },
+        required: ["zone", "plan", "exploit"],
+        additionalProperties: false,
+      },
+    },
+    firstTenMinutes: { type: "array", items: { type: "string" }, description: "The opening script" },
+    pregameTalk: { type: "string", description: "A short, age-appropriate pregame speech, word for word" },
+    benchNotes: { type: "array", items: { type: "string" }, description: "Substitution and game-management plan" },
+    ifChasing: { type: "array", items: { type: "string" }, description: "Adjustments if losing" },
+    ifProtecting: { type: "array", items: { type: "string" }, description: "Adjustments if winning" },
+  },
+  required: [
+    "matchTitle", "keysToTheGame", "inPossession", "outOfPossession", "setPieces",
+    "matchups", "firstTenMinutes", "pregameTalk", "benchNotes", "ifChasing", "ifProtecting",
+  ],
+  additionalProperties: false,
+} as const;

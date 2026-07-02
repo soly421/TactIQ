@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
-import { BETAS, FALLBACKS, MODEL, getClient, hasApiKey } from "./anthropic.js";
+import { getClient, hasApiKey, requestExtras } from "./anthropic.js";
 import { loadStore } from "./store.js";
 
 export function teamContext(): string {
@@ -15,6 +15,7 @@ export function teamContext(): string {
 <team_memory>
 This coach's team (use it — make every answer specific to THIS team):
 - Team: ${s.teamName} (${s.ageGroup}, ${s.format}, ${s.level} level)
+- Coach experience level: ${s.coachExperience || "intermediate"} (adapt your language per <coach_experience_adaptation>)
 - Preferred style: ${s.preferredStyle || "not specified"}
 - Roster notes: ${s.rosterNotes || "none"}
 - Season goals: ${s.seasonGoals || "none"}
@@ -25,6 +26,7 @@ ${recent || "- nothing yet, this is early in the season"}
 }
 
 interface StreamArgs {
+  model: string;
   system: string;
   messages: Anthropic.Beta.BetaMessageParam[];
   maxTokens?: number;
@@ -54,11 +56,12 @@ export async function streamToSSE(res: Response, args: StreamArgs): Promise<void
   }
 
   try {
+    const extras = requestExtras(args.model);
     const stream = getClient().beta.messages.stream({
-      model: MODEL,
+      model: args.model,
       max_tokens: args.maxTokens ?? 8000,
-      betas: BETAS,
-      fallbacks: FALLBACKS,
+      ...(extras.betas.length ? { betas: extras.betas } : {}),
+      ...(extras.fallbacks ? { fallbacks: extras.fallbacks } : {}),
       system: args.system,
       messages: args.messages,
     });
@@ -83,7 +86,22 @@ export async function streamToSSE(res: Response, args: StreamArgs): Promise<void
   res.end();
 }
 
+// Build message content from text + optional base64 image (data URL from the client).
+export function userContent(text: string, imageDataUrl?: string): Anthropic.Beta.BetaContentBlockParam[] | string {
+  if (!imageDataUrl) return text;
+  const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/.exec(imageDataUrl);
+  if (!match) return text;
+  return [
+    {
+      type: "image",
+      source: { type: "base64", media_type: match[1] as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: match[2] },
+    },
+    { type: "text", text },
+  ];
+}
+
 interface StructuredArgs<T> {
+  model: string;
   system: string;
   user: string;
   schema: Record<string, unknown>;
@@ -95,11 +113,12 @@ interface StructuredArgs<T> {
 export async function generateStructured<T>(args: StructuredArgs<T>): Promise<T> {
   if (!hasApiKey) return args.mock;
 
+  const extras = requestExtras(args.model);
   const stream = getClient().beta.messages.stream({
-    model: MODEL,
+    model: args.model,
     max_tokens: args.maxTokens ?? 24000,
-    betas: BETAS,
-    fallbacks: FALLBACKS,
+    ...(extras.betas.length ? { betas: extras.betas } : {}),
+    ...(extras.fallbacks ? { fallbacks: extras.fallbacks } : {}),
     system: args.system,
     messages: [{ role: "user", content: args.user }],
     output_config: {

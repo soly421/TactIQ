@@ -5,6 +5,7 @@ import type { AwardResult, SquadProfile } from "../types";
 
 const EMPTY: SquadProfile = {
   teamName: "",
+  coachExperience: "intermediate",
   ageGroup: "U10",
   format: "7v7",
   level: "travel",
@@ -75,6 +76,14 @@ export function Team() {
               <option value="rec">Recreational</option>
               <option value="travel">Travel / Club</option>
               <option value="academy">Academy / Elite</option>
+            </select>
+          </label>
+          <label className="field">
+            Your coaching experience
+            <select value={squad.coachExperience} onChange={(e) => set("coachExperience", e.target.value)}>
+              <option value="new">New — first seasons (plain language, exact setups)</option>
+              <option value="intermediate">Intermediate — a few seasons</option>
+              <option value="experienced">Experienced / licensed (full tactical depth)</option>
             </select>
           </label>
         </div>

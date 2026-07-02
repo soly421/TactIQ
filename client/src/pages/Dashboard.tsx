@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getJSON } from "../api";
-import { XpBar, useGamify } from "../components/Gamify";
+import { useGamify } from "../components/Gamify";
+import { XpChart } from "../components/XpChart";
 import type { SeasonEntry, SquadProfile } from "../types";
 
 const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬" };
@@ -15,53 +16,75 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
     void getJSON<{ squad: SquadProfile | null }>("/api/team").then((r) => setSquad(r.squad)).catch(() => {});
   }, [progress?.xp]);
 
+  const lvl = progress?.level;
+
   return (
     <div className="fade-in">
-      <div className="hero">
-        <h1>
-          {squad ? `${squad.teamName}` : "Your AI Assistant Coach"} <span style={{ fontSize: 22 }}>⚽</span>
-        </h1>
-        <p className="sub" style={{ marginBottom: 0 }}>
-          {squad
-            ? `${squad.ageGroup} · ${squad.format} · ${squad.level} — TactIQ remembers your season and tailors everything to this team.`
-            : "Design sessions, master tactics, and brainstorm with 24 coaching minds — built for US youth soccer."}
-        </p>
-        <div className="actions">
-          <button className="btn" onClick={() => go("sessions")}>+ New Training Session</button>
-          <button className="btn ghost" onClick={() => go("advisors")}>Brainstorm with an Advisor</button>
-          {!squad && <button className="btn ghost" onClick={() => go("team")}>Set Up My Team</button>}
+      {/* Portfolio header — the Robinhood moment */}
+      <div className="portfolio">
+        <div className="portfolio-label">
+          {squad ? squad.teamName : "Coaching Portfolio"} {squad && <span className="muted small">· {squad.ageGroup} · {squad.format}</span>}
         </div>
+        <div className="portfolio-value">{(progress?.xp ?? 0).toLocaleString()} <span className="unit">XP</span></div>
+        <div className={`portfolio-delta ${(progress?.xpToday ?? 0) > 0 ? "up" : ""}`}>
+          {(progress?.xpToday ?? 0) > 0 ? `▲ +${progress?.xpToday} XP today` : "— no XP yet today"}
+          {lvl && <span className="lvl-pill">Lv {lvl.level} · {lvl.title}</span>}
+        </div>
+        <XpChart history={progress?.xpHistory ?? []} />
+        {lvl?.nextXp && (
+          <div className="xp-meta" style={{ marginTop: 2 }}>
+            <span>{lvl.nextXp - (progress?.xp ?? 0)} XP to {lvl.nextTitle}</span>
+            <span>🔥 {progress?.streak ?? 0}-day streak</span>
+          </div>
+        )}
       </div>
 
-      <XpBar />
-
-      <div className="stat-row" style={{ marginTop: 18 }}>
-        <div className="stat">
-          <div className="num orange">{progress?.streak ?? 0}🔥</div>
-          <div className="label">Day Streak</div>
-        </div>
-        <div className="stat">
-          <div className="num">{progress?.counts.session ?? 0}</div>
-          <div className="label">Sessions Built</div>
-        </div>
-        <div className="stat">
-          <div className="num">{progress?.counts.formation ?? 0}</div>
-          <div className="label">Formations Analyzed</div>
-        </div>
-        <div className="stat">
-          <div className="num">{progress?.advisorsUsed ?? 0}/24</div>
-          <div className="label">Advisors Consulted</div>
-        </div>
-        <div className="stat">
-          <div className="num">{progress ? progress.usage.limit - progress.usage.used : "—"}</div>
-          <div className="label">Messages Left Today</div>
-        </div>
+      {/* Quick actions — the buy buttons */}
+      <div className="action-row">
+        <button className="action-tile" onClick={() => go("chat")}>
+          <span className="action-emoji">💬</span>
+          <b>Ask Coach T</b>
+          <span className="muted small">Your assistant coach</span>
+        </button>
+        <button className="action-tile" onClick={() => go("studio")}>
+          <span className="action-emoji">📋</span>
+          <b>New Session</b>
+          <span className="muted small">Visualized in seconds</span>
+        </button>
+        <button className="action-tile" onClick={() => go("advisors")}>
+          <span className="action-emoji">🧠</span>
+          <b>Advisors</b>
+          <span className="muted small">{progress?.advisorsUsed ?? 0} consulted</span>
+        </button>
+        <button className="action-tile" onClick={() => go("library")}>
+          <span className="action-emoji">📚</span>
+          <b>Library</b>
+          <span className="muted small">Schools of thought</span>
+        </button>
+        <button className="action-tile" onClick={() => go("matchday")}>
+          <span className="action-emoji">📣</span>
+          <b>Match Day</b>
+          <span className="muted small">Pre · Live · Post</span>
+        </button>
       </div>
 
-      <div className="card">
-        <h2>Season Log</h2>
-        {season.length === 0 && <p className="muted">Nothing yet — generate your first session and TactIQ starts building your season memory.</p>}
-        {season.slice(0, 10).map((e) => (
+      {!squad && (
+        <div className="hero" style={{ padding: 18 }}>
+          <b>Set up your team →</b>
+          <p className="sub" style={{ margin: "4px 0 10px" }}>
+            Give TactIQ your squad and it remembers your whole season — every answer becomes about <i>your</i> team.
+          </p>
+          <button className="btn" onClick={() => go("team")}>Set Up My Team</button>
+        </div>
+      )}
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h2>Season Activity</h2>
+          <span className="muted small">{season.length} entries</span>
+        </div>
+        {season.length === 0 && <p className="muted">Nothing yet — your first session starts the record.</p>}
+        {season.slice(0, 8).map((e) => (
           <div key={e.id} className="season-row">
             <span className="kind">{KIND_ICON[e.kind] ?? "•"}</span>
             <div>
