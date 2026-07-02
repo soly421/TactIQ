@@ -11,7 +11,7 @@ export function streakFreezeAvailable(userId: number): boolean {
 
 export const FREE_DAILY_MESSAGES = 30;
 
-export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film" | "board";
+export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film" | "board" | "debate";
 
 const XP_RULES: Record<XpAction, number> = {
   chat: 5,
@@ -25,6 +25,7 @@ const XP_RULES: Record<XpAction, number> = {
   rate: 2,
   film: 45,
   board: 8,
+  debate: 10,
 };
 
 export const LEVELS = [

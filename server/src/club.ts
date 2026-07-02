@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { addClubComment, addClubSession, clubCoaches, clubReport, getClubBilling, getClubComments, getClubSessions, getUserClub, setClubPhilosophy } from "./store.js";
+import { addClubComment, addClubSession, clubCoaches, clubReport, getClubBilling, getClubComments, getClubSessions, getCurriculum, getUserClub, setClubPhilosophy, setCurriculum } from "./store.js";
+import { weekStart } from "./community.js";
 import { levelFor } from "./gamification.js";
 
 // Club mode: what a Director of Coaching needs — coach oversight, club-wide
@@ -53,6 +54,35 @@ clubRouter.get("/report", (req, res) => {
     license: { planTier: billing?.planTier ?? "free", seats: billing?.seats ?? 0 },
     ...report,
   });
+});
+
+// The club curriculum calendar: the DOC sets weekly themes per age band;
+// every coach's AI aligns to them automatically.
+clubRouter.get("/curriculum", (req, res) => {
+  const club = getUserClub(uid(req));
+  if (!club) {
+    res.status(404).json({ error: "Not in a club" });
+    return;
+  }
+  res.json({ weekStart: weekStart(), rows: getCurriculum(club.id, weekStart(), 8), isAdmin: club.role === "admin" });
+});
+
+clubRouter.put("/curriculum", (req, res) => {
+  const club = getUserClub(uid(req));
+  if (!club || club.role !== "admin") {
+    res.status(403).json({ error: "Only the club admin can set the curriculum" });
+    return;
+  }
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  setCurriculum(
+    club.id,
+    rows.slice(0, 100).map((r: { weekStart?: string; ageBand?: string; theme?: string }) => ({
+      weekStart: String(r.weekStart ?? "").slice(0, 10),
+      ageBand: String(r.ageBand ?? "").slice(0, 10),
+      theme: String(r.theme ?? ""),
+    })),
+  );
+  res.json({ rows: getCurriculum(club.id, weekStart(), 8) });
 });
 
 clubRouter.put("/philosophy", (req, res) => {

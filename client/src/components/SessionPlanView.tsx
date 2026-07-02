@@ -59,6 +59,20 @@ export function SessionPlanView({ plan, entryId }: { plan: SessionPlan; entryId?
         <ul className="points">{plan.coachReminders.map((r, i) => <li key={i}>{r}</li>)}</ul>
         <RateBar kind="session" entryId={entryId} />
       </div>
-    </div>
+          <div className="notation-legend card">
+        <b className="small">Diagram key (standard notation)</b>
+        <div className="legend-row">
+          <span><svg width="34" height="10"><line x1="2" y1="5" x2="26" y2="5" stroke="#ffe14d" strokeWidth="2"/><polygon points="26,1 33,5 26,9" fill="#ffe14d"/></svg> Pass</span>
+          <span><svg width="34" height="10"><line x1="2" y1="5" x2="26" y2="5" stroke="#fff" strokeWidth="2" strokeDasharray="4 3"/><polygon points="26,1 33,5 26,9" fill="#fff"/></svg> Run (no ball)</span>
+          <span><svg width="34" height="10"><path d="M2 5 Q 8 0, 14 5 T 26 5" fill="none" stroke="#7ef0ff" strokeWidth="2"/><polygon points="26,1 33,5 26,9" fill="#7ef0ff"/></svg> Dribble</span>
+          <span>🔶 Attacker</span>
+          <span>🔷 Defender</span>
+          <span>⚪ Neutral</span>
+          <span>▲ Cone</span>
+          <span>⚽ Ball</span>
+          <span>🥅 Goal</span>
+        </div>
+      </div>
+</div>
   );
 }

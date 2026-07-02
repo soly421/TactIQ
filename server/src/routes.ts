@@ -12,15 +12,29 @@ import {
 import {
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  activeTeamId, addFeedback, createTeam, deleteTeam, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
+  activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor, streakFreezeAvailable } from "./gamification.js";
-import { communitySnapshot } from "./community.js";
+import { communitySnapshot, weekStart } from "./community.js";
+import { castVote, debateState } from "./debate.js";
 import { questState } from "./quests.js";
 import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
 import { stripeConfigured } from "./billing.js";
 import { maybeResyncIcs } from "./schedule.js";
+
+// "U11" -> "U11-U12" (server twin of the client bandForAge)
+function bandForAgeServer(ageGroup: string): string {
+  if (/hs|high/i.test(ageGroup)) return "HS";
+  const n = Number(/\d+/.exec(ageGroup)?.[0]);
+  if (!n) return "U11-U12";
+  if (n <= 8) return "U6-U8";
+  if (n <= 10) return "U9-U10";
+  if (n <= 12) return "U11-U12";
+  if (n <= 14) return "U13-U14";
+  if (n <= 16) return "U15-U16";
+  return "HS";
+}
 import { bumpMonthly, entitlementsFor, getStaff, monthlyCount, signOrCheckAdvisor, upgradeError } from "./entitlements.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
 
@@ -946,6 +960,25 @@ api.get("/community", (req, res) => {
   });
 });
 
+// ---- The Touchline Debate: weekly dilemma, tap to vote, verdict Saturday ----
+api.get("/debate", (req, res) => {
+  res.json(debateState(uid(req)));
+});
+
+api.post("/debate/vote", (req, res) => {
+  const userId = uid(req);
+  const state = debateState(userId);
+  const choice = String(req.body?.choice ?? "");
+  if (!state.debate.options.some((o) => o.id === choice)) {
+    res.status(400).json({ error: "Pick one of the options" });
+    return;
+  }
+  const firstVote = state.yourVote === null;
+  castVote(userId, choice);
+  const gamify = firstVote ? award(userId, "debate") : null;
+  res.json({ ...debateState(userId), award: gamify });
+});
+
 // ---- Entitlements: what this coach's plan includes, with live usage ----
 api.get("/entitlements", (req, res) => {
   const userId = uid(req);
@@ -1042,7 +1075,12 @@ api.get("/home", async (req, res) => {
 
   const suggestion = suggestTheme(lastMatch?.story ?? "", balance);
 
+  // Club curriculum theme for this coach's age band this week
+  const club = getUserClub(userId);
+  const clubTheme = club && squad ? clubThemeFor(club.id, weekStart(), bandForAgeServer(squad.ageGroup)) : null;
+
   res.json({
+    clubTheme,
     squad,
     record,
     lastMatch,

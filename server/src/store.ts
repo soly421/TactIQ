@@ -435,6 +435,36 @@ export function getTeamSnapToken(userId: number): string | null {
   return row?.teamsnap_token ?? null;
 }
 
+// ---- club curriculum (DOC themes per week per age band) ----
+export function setCurriculum(clubId: number, rows: { weekStart: string; ageBand: string; theme: string }[]): void {
+  const up = db.prepare(
+    "INSERT INTO club_curriculum (club_id, week_start, age_band, theme) VALUES (?, ?, ?, ?) ON CONFLICT(club_id, week_start, age_band) DO UPDATE SET theme = excluded.theme",
+  );
+  const del = db.prepare("DELETE FROM club_curriculum WHERE club_id = ? AND week_start = ? AND age_band = ?");
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      if (r.theme.trim()) up.run(clubId, r.weekStart, r.ageBand, r.theme.trim().slice(0, 120));
+      else del.run(clubId, r.weekStart, r.ageBand);
+    }
+  });
+  tx();
+}
+
+export function getCurriculum(clubId: number, fromWeek: string, weeks = 8): { week_start: string; age_band: string; theme: string }[] {
+  return db
+    .prepare(
+      "SELECT week_start, age_band, theme FROM club_curriculum WHERE club_id = ? AND week_start >= ? ORDER BY week_start ASC LIMIT ?",
+    )
+    .all(clubId, fromWeek, weeks * 8) as { week_start: string; age_band: string; theme: string }[];
+}
+
+export function clubThemeFor(clubId: number, weekStartStr: string, ageBand: string): string | null {
+  const row = db
+    .prepare("SELECT theme FROM club_curriculum WHERE club_id = ? AND week_start = ? AND age_band = ?")
+    .get(clubId, weekStartStr, ageBand) as { theme: string } | undefined;
+  return row?.theme ?? null;
+}
+
 // ---- kv (scheduler state) ----
 export function kvGet(k: string): string | null {
   const row = db.prepare("SELECT v FROM kv WHERE k = ?").get(k) as { v: string } | undefined;

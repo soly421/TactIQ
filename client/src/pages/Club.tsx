@@ -86,6 +86,83 @@ function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: num
   );
 }
 
+const CURRICULUM_BANDS = ["U6-U8", "U9-U10", "U11-U12", "U13-U14", "U15-U16", "HS"];
+
+// The club curriculum calendar: the DOC's weekly themes per age band. Every
+// coach's AI aligns to the active theme automatically — this is the feature
+// session-drawing tools can't match.
+function CurriculumCard() {
+  const [rows, setRows] = useState<{ week_start: string; age_band: string; theme: string }[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [band, setBand] = useState("U11-U12");
+  const [weekStart, setWeekStart] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void getJSON<{ weekStart: string; rows: typeof rows; isAdmin: boolean }>("/api/club/curriculum")
+      .then((r) => { setRows(r.rows); setIsAdmin(r.isAdmin); setWeekStart(r.weekStart); })
+      .catch(() => {});
+  }, []);
+
+  if (!weekStart) return null;
+  const weeks = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(new Date(`${weekStart}T00:00:00Z`).getTime() + i * 7 * 86400000);
+    return d.toISOString().slice(0, 10);
+  });
+  const themeFor = (w: string, b: string) => rows.find((r) => r.week_start === w && r.age_band === b)?.theme ?? "";
+
+  function setTheme(w: string, b: string, theme: string) {
+    setSaved(false);
+    setRows((rs) => {
+      const others = rs.filter((r) => !(r.week_start === w && r.age_band === b));
+      return [...others, { week_start: w, age_band: b, theme }];
+    });
+  }
+
+  async function save() {
+    const payload = weeks.map((w) => ({ weekStart: w, ageBand: band, theme: themeFor(w, band) }));
+    await sendJSON("/api/club/curriculum", { rows: payload }, "PUT");
+    setSaved(true);
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+        <h2>📆 Club curriculum</h2>
+        <span className="muted small">weekly themes flow into every coach's AI automatically</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        <label className="field" style={{ margin: 0 }}>
+          <select value={band} onChange={(e) => setBand(e.target.value)}>
+            {CURRICULUM_BANDS.map((b) => <option key={b}>{b}</option>)}
+          </select>
+        </label>
+        {isAdmin && <button className="btn" style={{ fontSize: 12.5, padding: "7px 14px" }} onClick={() => void save()}>Save {band} plan</button>}
+        {saved && <span style={{ color: "var(--green)", fontWeight: 600, fontSize: 13 }}>✓ Saved — live for every {band} coach</span>}
+      </div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {weeks.map((w, i) => (
+          <div key={w} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="chip" style={{ minWidth: 108, textAlign: "center" }}>{i === 0 ? "THIS WEEK" : w.slice(5)}</span>
+            {isAdmin ? (
+              <input
+                style={{ flex: 1 }}
+                value={themeFor(w, band)}
+                placeholder={i === 0 ? "e.g. Playing out of the back" : "Theme…"}
+                onChange={(e) => setTheme(w, band, e.target.value)}
+              />
+            ) : (
+              <span className="small" style={{ flex: 1, color: themeFor(w, band) ? "var(--text)" : "var(--muted)" }}>
+                {themeFor(w, band) || "—"}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Club mode: the Director of Coaching's view — coach activity, club philosophy,
 // and club-wide session distribution.
 export function Club({ user }: { user: User }) {
@@ -197,6 +274,8 @@ export function Club({ user }: { user: User }) {
       </div>
 
       <ClubReport isAdmin={club.isAdmin} coachCount={totals.coaches} />
+
+      <CurriculumCard />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Coach activity</h2>

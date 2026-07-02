@@ -13,6 +13,7 @@ const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", 
 const clean = (s: string) => s.replace(/#+\s?/g, "").replace(/\[Demo mode[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
 
 interface HomeData {
+  clubTheme?: string | null;
   squad: SquadProfile | null;
   record: { w: number; d: number; l: number; gf: number; ga: number; form: string[] };
   lastMatch: { title: string; story: string; date: string } | null;
@@ -250,6 +251,11 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
         </div>
       </div>
 
+      {home?.clubTheme && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "var(--turquoise)", padding: "10px 16px" }}>
+          <span className="small"><b style={{ color: "var(--turquoise)" }}>🏛️ Club theme this week:</b> {home.clubTheme} — sessions and advice align to it automatically.</span>
+        </div>
+      )}
       {home && <Touchline home={home} go={go} trainNext={trainNext} />}
       {home && <Briefing text={home.briefing} go={go} />}
       {home && <WeekStrip home={home} go={go} />}

@@ -1,7 +1,8 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { hasAnyProvider, RefusalError, streamText, structuredText, TIER_INFO, type Tier } from "./providers.js";
-import { feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
+import { clubThemeFor, feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
+import { weekStart } from "./community.js";
 
 // The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
 function preferenceBlock(userId: number): string {
@@ -18,12 +19,25 @@ ${liked ? `Liked:\n${liked}` : ""}${liked && disliked ? "\n" : ""}${disliked ? `
 </coach_preferences>`;
 }
 
+function bandFor(ageGroup: string): string {
+  if (/hs|high/i.test(ageGroup)) return "HS";
+  const n = Number(/\d+/.exec(ageGroup)?.[0]);
+  if (!n) return "U11-U12";
+  if (n <= 8) return "U6-U8";
+  if (n <= 10) return "U9-U10";
+  if (n <= 12) return "U11-U12";
+  if (n <= 14) return "U13-U14";
+  if (n <= 16) return "U15-U16";
+  return "HS";
+}
+
 export function teamContext(userId: number): string {
   const squad = getSquad(userId);
   const club = getUserClub(userId);
   const prefBlock = preferenceBlock(userId);
-  const clubBlock = club?.philosophy
-    ? `\n<club_philosophy>\nThis coach's club (${club.name}) has a club-wide coaching philosophy set by its director. Align advice with it:\n${club.philosophy}\n</club_philosophy>`
+  const theme = club && squad ? clubThemeFor(club.id, weekStart(), bandFor(squad.ageGroup)) : null;
+  const clubBlock = club?.philosophy || theme
+    ? `\n<club_philosophy>\n${club?.philosophy ? `This coach's club (${club.name}) has a club-wide coaching philosophy set by its director. Align advice with it:\n${club.philosophy}` : ""}${theme ? `\nCLUB CURRICULUM — this week's theme for this coach's age group is "${theme}". Training recommendations and sessions should serve this theme unless the coach explicitly asks otherwise.` : ""}\n</club_philosophy>`
     : "";
   if (!squad) return `${clubBlock}${prefBlock}\n<team_memory>\nThe coach has not set up a team profile yet. If relevant, suggest they add their squad in the My Team tab so advice can be personalized.\n</team_memory>`;
   const s = squad;

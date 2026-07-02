@@ -154,6 +154,21 @@ CREATE TABLE IF NOT EXISTS password_resets (
   expires_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS debate_votes (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  week TEXT NOT NULL,
+  choice TEXT NOT NULL,
+  PRIMARY KEY (user_id, week)
+);
+
+CREATE TABLE IF NOT EXISTS club_curriculum (
+  club_id INTEGER NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+  week_start TEXT NOT NULL,
+  age_band TEXT NOT NULL,
+  theme TEXT NOT NULL,
+  PRIMARY KEY (club_id, week_start, age_band)
+);
+
 CREATE TABLE IF NOT EXISTS kv (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
