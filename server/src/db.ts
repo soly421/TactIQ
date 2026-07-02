@@ -128,6 +128,13 @@ CREATE TABLE IF NOT EXISTS quest_log (
   PRIMARY KEY (user_id, day, quest_id)
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_teams_user ON teams(user_id);
+
 CREATE TABLE IF NOT EXISTS schedule_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -178,3 +185,22 @@ try { db.exec("ALTER TABLE clubs ADD COLUMN seats INTEGER NOT NULL DEFAULT 0"); 
 try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN teamsnap_token TEXT"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN active_team_id INTEGER"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE season_entries ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE schedule_events ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE library_plans ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
+
+// One-time migration: accounts created before multi-team support have their
+// single squad in the legacy `squads` table — promote it to a team row.
+try {
+  const legacy = db.prepare(
+    "SELECT s.user_id, s.data FROM squads s WHERE NOT EXISTS (SELECT 1 FROM teams t WHERE t.user_id = s.user_id)",
+  ).all() as { user_id: number; data: string }[];
+  const ins = db.prepare("INSERT INTO teams (user_id, data) VALUES (?, ?)");
+  const setActive = db.prepare("UPDATE users SET active_team_id = ? WHERE id = ? AND active_team_id IS NULL");
+  for (const row of legacy) {
+    const info = ins.run(row.user_id, row.data);
+    setActive.run(Number(info.lastInsertRowid), row.user_id);
+  }
+  if (legacy.length > 0) console.log(`[db] migrated ${legacy.length} squads to multi-team`);
+} catch { /* squads table may not exist in fresh installs */ }

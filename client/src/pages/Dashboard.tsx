@@ -4,6 +4,7 @@ import { useGamify } from "../components/Gamify";
 import { XpChart } from "../components/XpChart";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { getOfflinePlans, type SavedPlan } from "../savedPlans";
+import { TeamSwitcher } from "../components/TeamSwitcher";
 import type { SeasonEntry, SquadProfile } from "../types";
 
 const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬", match: "📣", film: "🎬" };
@@ -36,46 +37,48 @@ const PHASE_COLOR: Record<string, string> = {
   transition: "#7ef0ff", technical: "#c084fc",
 };
 
-// The Touchline hero: last game and next game face to face, one lit action between.
+// The Touchline hero: one card. Last game and next game are the two halves;
+// the "train this next" bar spans beneath them — the bridge from what
+// happened to what's coming.
 function Touchline({ home, go, trainNext }: { home: HomeData; go: (tab: string) => void; trainNext: () => void }) {
   const countdown = home.nextGame ? daysUntil(home.nextGame.date) : null;
   return (
-    <div className="touchline">
-      <div className="card tl-card">
-        <div className="tl-label">Last game</div>
-        {home.lastMatch ? (
-          <>
-            <div className="tl-big">{home.lastMatch.title}</div>
-            {home.lastMatch.story && <div className="tl-takeaway">“{home.lastMatch.story}”</div>}
-          </>
-        ) : (
-          <>
-            <div className="tl-big muted">No games logged</div>
-            <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => go("matchday")}>Log your last game →</button>
-          </>
-        )}
+    <div className="card touchline">
+      <div className="tl-grid">
+        <div className="tl-side">
+          <div className="tl-label">Last game</div>
+          {home.lastMatch ? (
+            <>
+              <div className="tl-big">{home.lastMatch.title}</div>
+              {home.lastMatch.story && <div className="tl-takeaway">“{home.lastMatch.story}”</div>}
+            </>
+          ) : (
+            <>
+              <div className="tl-big muted">No games logged yet</div>
+              <button className="btn ghost tl-cta" onClick={() => go("matchday")}>Log your last game →</button>
+            </>
+          )}
+        </div>
+        <div className="tl-side tl-next">
+          <div className="tl-label">Next game {countdown && <b style={{ color: "var(--accent)" }}>· {countdown}</b>}</div>
+          {home.nextGame ? (
+            <>
+              <div className="tl-big">vs {home.nextGame.opponent}</div>
+              <div className="muted small">{home.nextGame.date?.slice(0, 10)}{home.nextGame.location ? ` · ${home.nextGame.location}` : ""}</div>
+              <button className="btn ghost tl-cta" onClick={() => go("matchday")}>Build game plan →</button>
+            </>
+          ) : (
+            <>
+              <div className="tl-big muted">Not scheduled</div>
+              <button className="btn ghost tl-cta" onClick={() => go("team")}>Add your schedule →</button>
+            </>
+          )}
+        </div>
       </div>
-      <div className="tl-center">
-        <button className="btn tl-train" onClick={trainNext}>🎯 Train this next</button>
-        <span className="muted small" style={{ textAlign: "center", maxWidth: 160 }}>
-          {home.suggestion.theme} — {home.suggestion.reason}
-        </span>
-      </div>
-      <div className="card tl-card">
-        <div className="tl-label">Next game {countdown && <b style={{ color: "var(--accent)" }}>· {countdown}</b>}</div>
-        {home.nextGame ? (
-          <>
-            <div className="tl-big">vs {home.nextGame.opponent}</div>
-            <div className="muted small">{home.nextGame.date?.slice(0, 10)}{home.nextGame.location ? ` · ${home.nextGame.location}` : ""}</div>
-            <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => go("matchday")}>Build game plan →</button>
-          </>
-        ) : (
-          <>
-            <div className="tl-big muted">Not scheduled</div>
-            <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => go("team")}>Add schedule →</button>
-          </>
-        )}
-      </div>
+      <button className="tl-train" onClick={trainNext}>
+        <span className="tl-train-main">🎯 Train this next: {home.suggestion.theme}</span>
+        <span className="tl-train-why">{home.suggestion.reason} →</span>
+      </button>
     </div>
   );
 }
@@ -240,6 +243,7 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
           </span>
         </div>
         <div className="row" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <TeamSwitcher />
           {lvl && <span className="chip">Lv {lvl.level} · {lvl.title}</span>}
           <span className="chip">🔥 {progress?.streak ?? 0}</span>
           <span className="chip">⚡ {(progress?.xp ?? 0).toLocaleString()} XP</span>

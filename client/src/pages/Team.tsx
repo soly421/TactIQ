@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { useGamify } from "../components/Gamify";
+import { TeamSwitcher } from "../components/TeamSwitcher";
 import type { AwardResult, PlayerNote, SquadProfile } from "../types";
 
 interface ScheduleInfo {
@@ -146,10 +147,14 @@ export function Team() {
 
   return (
     <div className="fade-in">
-      <h1>My Team</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ marginBottom: 0 }}>My Team</h1>
+        <TeamSwitcher withCreate />
+      </div>
       <p className="sub">
         TactIQ's season-long memory. Everything here — including your roster — flows into every advisor, session, formation, and
-        Match Day briefing, so guidance is about <b>your actual players</b>.
+        Match Day briefing, so guidance is about <b>your actual players</b>. Each team keeps its own roster, schedule, and season
+        memory — switch above to work with another squad.
       </p>
 
       <div className="card" style={{ marginBottom: 16 }}>

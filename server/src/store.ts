@@ -54,22 +54,73 @@ export interface CustomAdvisor {
   custom: true;
 }
 
-// ---- squad ----
+// ---- teams (multi-team: a coach can run several squads; one is active) ----
+// getSquad/saveSquad keep their signatures — they read/write the ACTIVE team —
+// so season memory, schedule, prompts, and the whole app scope per team.
+
+export function activeTeamId(userId: number): number | null {
+  const row = db.prepare("SELECT active_team_id FROM users WHERE id = ?").get(userId) as { active_team_id: number | null } | undefined;
+  if (row?.active_team_id) return row.active_team_id;
+  const first = db.prepare("SELECT id FROM teams WHERE user_id = ? ORDER BY id ASC LIMIT 1").get(userId) as { id: number } | undefined;
+  if (first) {
+    db.prepare("UPDATE users SET active_team_id = ? WHERE id = ?").run(first.id, userId);
+    return first.id;
+  }
+  return null;
+}
+
+export function listTeams(userId: number): { id: number; squad: SquadProfile; active: boolean }[] {
+  const active = activeTeamId(userId);
+  const rows = db.prepare("SELECT id, data FROM teams WHERE user_id = ? ORDER BY id ASC").all(userId) as { id: number; data: string }[];
+  return rows.map((r) => ({ id: r.id, squad: JSON.parse(r.data) as SquadProfile, active: r.id === active }));
+}
+
+export function createTeam(userId: number, squad: SquadProfile): number {
+  const info = db.prepare("INSERT INTO teams (user_id, data) VALUES (?, ?)").run(userId, JSON.stringify(squad));
+  const teamId = Number(info.lastInsertRowid);
+  db.prepare("UPDATE users SET active_team_id = ? WHERE id = ?").run(teamId, userId);
+  return teamId;
+}
+
+export function setActiveTeam(userId: number, teamId: number): boolean {
+  const owned = db.prepare("SELECT id FROM teams WHERE id = ? AND user_id = ?").get(teamId, userId);
+  if (!owned) return false;
+  db.prepare("UPDATE users SET active_team_id = ? WHERE id = ?").run(teamId, userId);
+  return true;
+}
+
+export function deleteTeam(userId: number, teamId: number): boolean {
+  const owned = db.prepare("SELECT id FROM teams WHERE id = ? AND user_id = ?").get(teamId, userId);
+  if (!owned) return false;
+  db.prepare("DELETE FROM teams WHERE id = ?").run(teamId);
+  db.prepare("DELETE FROM season_entries WHERE user_id = ? AND team_id = ?").run(userId, teamId);
+  db.prepare("DELETE FROM schedule_events WHERE user_id = ? AND team_id = ?").run(userId, teamId);
+  const next = db.prepare("SELECT id FROM teams WHERE user_id = ? ORDER BY id ASC LIMIT 1").get(userId) as { id: number } | undefined;
+  db.prepare("UPDATE users SET active_team_id = ? WHERE id = ?").run(next?.id ?? null, userId);
+  return true;
+}
+
 export function getSquad(userId: number): SquadProfile | null {
-  const row = db.prepare("SELECT data FROM squads WHERE user_id = ?").get(userId) as { data: string } | undefined;
+  const teamId = activeTeamId(userId);
+  if (!teamId) return null;
+  const row = db.prepare("SELECT data FROM teams WHERE id = ?").get(teamId) as { data: string } | undefined;
   return row ? (JSON.parse(row.data) as SquadProfile) : null;
 }
 
 export function saveSquad(userId: number, squad: SquadProfile): void {
-  db.prepare(
-    "INSERT INTO squads (user_id, data) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data",
-  ).run(userId, JSON.stringify(squad));
+  const teamId = activeTeamId(userId);
+  if (teamId) {
+    db.prepare("UPDATE teams SET data = ? WHERE id = ?").run(JSON.stringify(squad), teamId);
+  } else {
+    createTeam(userId, squad);
+  }
 }
 
-// ---- season log ----
+// ---- season log (scoped to the active team; legacy NULL rows show everywhere) ----
 export function addSeasonEntry(userId: number, entry: Omit<SeasonEntry, "id" | "date">): number {
-  const info = db.prepare("INSERT INTO season_entries (user_id, kind, title, summary, payload) VALUES (?, ?, ?, ?, ?)").run(
+  const info = db.prepare("INSERT INTO season_entries (user_id, team_id, kind, title, summary, payload) VALUES (?, ?, ?, ?, ?, ?)").run(
     userId,
+    activeTeamId(userId),
     entry.kind,
     entry.title,
     entry.summary,
@@ -79,9 +130,12 @@ export function addSeasonEntry(userId: number, entry: Omit<SeasonEntry, "id" | "
 }
 
 export function getSeason(userId: number, limit = 100): SeasonEntry[] {
+  const teamId = activeTeamId(userId);
   const rows = db
-    .prepare("SELECT id, date, kind, title, summary, payload FROM season_entries WHERE user_id = ? ORDER BY id DESC LIMIT ?")
-    .all(userId, limit) as { id: number; date: string; kind: SeasonEntry["kind"]; title: string; summary: string; payload: string | null }[];
+    .prepare(
+      "SELECT id, date, kind, title, summary, payload FROM season_entries WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) ORDER BY id DESC LIMIT ?",
+    )
+    .all(userId, teamId ?? -1, limit) as { id: number; date: string; kind: SeasonEntry["kind"]; title: string; summary: string; payload: string | null }[];
   return rows.map((r) => ({ ...r, payload: r.payload ? JSON.parse(r.payload) : undefined }));
 }
 
@@ -157,21 +211,27 @@ export function deleteCustomAdvisor(userId: number, id: string): void {
 }
 
 // ---- library ----
+// Library cache is per team: unlocking a card for the U11s doesn't hand the
+// same session to the coach's U14s — each team regenerates its own version.
 export function getLibraryPlan(userId: number, templateId: string): unknown | null {
-  const row = db.prepare("SELECT data FROM library_plans WHERE user_id = ? AND template_id = ?").get(userId, templateId) as
-    | { data: string }
-    | undefined;
+  const teamId = activeTeamId(userId);
+  const row = db
+    .prepare("SELECT data FROM library_plans WHERE user_id = ? AND template_id = ? AND (team_id IS NULL OR team_id = ?)")
+    .get(userId, templateId, teamId ?? -1) as { data: string } | undefined;
   return row ? JSON.parse(row.data) : null;
 }
 
 export function saveLibraryPlan(userId: number, templateId: string, plan: unknown): void {
   db.prepare(
-    "INSERT INTO library_plans (user_id, template_id, data) VALUES (?, ?, ?) ON CONFLICT(user_id, template_id) DO UPDATE SET data = excluded.data",
-  ).run(userId, templateId, JSON.stringify(plan));
+    "INSERT INTO library_plans (user_id, template_id, data, team_id) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, template_id) DO UPDATE SET data = excluded.data, team_id = excluded.team_id",
+  ).run(userId, templateId, JSON.stringify(plan), activeTeamId(userId));
 }
 
 export function getUnlockedTemplateIds(userId: number): Set<string> {
-  const rows = db.prepare("SELECT template_id FROM library_plans WHERE user_id = ?").all(userId) as { template_id: string }[];
+  const teamId = activeTeamId(userId);
+  const rows = db
+    .prepare("SELECT template_id FROM library_plans WHERE user_id = ? AND (team_id IS NULL OR team_id = ?)")
+    .all(userId, teamId ?? -1) as { template_id: string }[];
   return new Set(rows.map((r) => r.template_id));
 }
 
@@ -332,13 +392,14 @@ export interface ScheduleEvent {
 }
 
 export function replaceScheduleEvents(userId: number, source: string, events: Omit<ScheduleEvent, "id" | "source">[]): number {
-  const del = db.prepare("DELETE FROM schedule_events WHERE user_id = ? AND source = ?");
+  const teamId = activeTeamId(userId);
+  const del = db.prepare("DELETE FROM schedule_events WHERE user_id = ? AND source = ? AND (team_id IS NULL OR team_id = ?)");
   const ins = db.prepare(
-    "INSERT OR REPLACE INTO schedule_events (user_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO schedule_events (user_id, team_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const tx = db.transaction(() => {
-    del.run(userId, source);
-    for (const e of events) ins.run(userId, e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120), source);
+    del.run(userId, source, teamId ?? -1);
+    for (const e of events) ins.run(userId, teamId, e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120), source);
   });
   tx();
   return events.length;
@@ -346,8 +407,8 @@ export function replaceScheduleEvents(userId: number, source: string, events: Om
 
 export function addScheduleEvent(userId: number, e: Omit<ScheduleEvent, "id" | "source">): void {
   db.prepare(
-    "INSERT OR REPLACE INTO schedule_events (user_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, 'manual')",
-  ).run(userId, e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120));
+    "INSERT OR REPLACE INTO schedule_events (user_id, team_id, start, title, kind, opponent, location, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')",
+  ).run(userId, activeTeamId(userId), e.start, e.title.slice(0, 120), e.kind, e.opponent.slice(0, 80), e.location.slice(0, 120));
 }
 
 export function deleteScheduleEvent(userId: number, id: number): void {
@@ -355,13 +416,14 @@ export function deleteScheduleEvent(userId: number, id: number): void {
 }
 
 export function upcomingEvents(userId: number, days = 14): ScheduleEvent[] {
+  const teamId = activeTeamId(userId);
   return db
     .prepare(
       `SELECT id, start, title, kind, opponent, location, source FROM schedule_events
-       WHERE user_id = ? AND start >= datetime('now', '-6 hours') AND start <= datetime('now', '+' || ? || ' days')
+       WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) AND start >= datetime('now', '-6 hours') AND start <= datetime('now', '+' || ? || ' days')
        ORDER BY start ASC LIMIT 40`,
     )
-    .all(userId, days) as ScheduleEvent[];
+    .all(userId, teamId ?? -1, days) as ScheduleEvent[];
 }
 
 export function setTeamSnapToken(userId: number, token: string | null): void {

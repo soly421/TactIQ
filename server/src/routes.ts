@@ -12,7 +12,7 @@ import {
 import {
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  addFeedback, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, saveLibraryPlan, saveSquad, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
+  activeTeamId, addFeedback, createTeam, deleteTeam, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
@@ -664,14 +664,8 @@ api.get("/team", (req, res) => {
   res.json({ squad: getSquad(uid(req)) });
 });
 
-api.put("/team", (req, res) => {
-  const userId = uid(req);
-  const s = req.body as SquadProfile;
-  if (!s?.teamName || !s?.ageGroup) {
-    res.status(400).json({ error: "teamName and ageGroup are required" });
-    return;
-  }
-  const squad: SquadProfile = {
+function sanitizeSquad(s: SquadProfile): SquadProfile {
+  return {
     teamName: s.teamName,
     coachExperience: (["new", "intermediate", "experienced"] as const).includes(s.coachExperience) ? s.coachExperience : "intermediate",
     ageGroup: s.ageGroup,
@@ -691,9 +685,63 @@ api.put("/team", (req, res) => {
       notes: String(p?.notes ?? "").slice(0, 300),
     })),
   };
+}
+
+// Saves the ACTIVE team's profile.
+api.put("/team", (req, res) => {
+  const userId = uid(req);
+  const s = req.body as SquadProfile;
+  if (!s?.teamName || !s?.ageGroup) {
+    res.status(400).json({ error: "teamName and ageGroup are required" });
+    return;
+  }
+  const squad = sanitizeSquad(s);
   saveSquad(userId, squad);
   const gamify = award(userId, "squad");
   res.json({ squad, award: gamify });
+});
+
+// ---- Multi-team: list, create, switch, delete ----
+api.get("/teams", (req, res) => {
+  res.json({
+    teams: listTeams(uid(req)).map((t) => ({
+      id: t.id, active: t.active,
+      teamName: t.squad.teamName, ageGroup: t.squad.ageGroup, format: t.squad.format, level: t.squad.level,
+      players: (t.squad.players ?? []).filter((p) => p.name).length,
+    })),
+  });
+});
+
+api.post("/teams", (req, res) => {
+  const userId = uid(req);
+  const s = req.body as SquadProfile;
+  if (!s?.teamName || !s?.ageGroup) {
+    res.status(400).json({ error: "teamName and ageGroup are required" });
+    return;
+  }
+  if (listTeams(userId).length >= 8) {
+    res.status(400).json({ error: "Maximum of 8 teams per account." });
+    return;
+  }
+  const teamId = createTeam(userId, sanitizeSquad(s));
+  const gamify = award(userId, "squad");
+  res.json({ teamId, award: gamify });
+});
+
+api.post("/teams/:id/activate", (req, res) => {
+  if (!setActiveTeam(uid(req), Number(req.params.id))) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+api.delete("/teams/:id", (req, res) => {
+  if (!deleteTeam(uid(req), Number(req.params.id))) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 api.get("/season", (req, res) => {
@@ -836,7 +884,7 @@ async function dailyBriefing(
   },
 ): Promise<string> {
   const day = new Date().toISOString().slice(0, 10);
-  const key = `brief:${userId}:${day}`;
+  const key = `brief:${userId}:${activeTeamId(userId) ?? 0}:${day}`;
   const cached = kvGet(key);
   if (cached) return cached;
   let text: string;
