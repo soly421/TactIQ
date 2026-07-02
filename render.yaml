@@ -1,0 +1,13 @@
+# One-click deploy blueprint for Render (render.com).
+# New > Blueprint > point at this repo/branch, set ANTHROPIC_API_KEY, deploy.
+services:
+  - type: web
+    name: tactiq
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false # set in the Render dashboard
+      - key: PORT
+        value: "8787"
