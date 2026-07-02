@@ -47,9 +47,9 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
           <span className="muted small">Your assistant coach</span>
         </button>
         <button className="action-tile" onClick={() => go("studio")}>
-          <span className="action-emoji">📋</span>
-          <b>New Session</b>
-          <span className="muted small">Visualized in seconds</span>
+          <span className="action-emoji">🔬</span>
+          <b>The Labs</b>
+          <span className="muted small">Sessions · Field Board · Scan</span>
         </button>
         <button className="action-tile" onClick={() => go("advisors")}>
           <span className="action-emoji">🧠</span>
@@ -67,6 +67,28 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
           <span className="muted small">Pre · Live · Post</span>
         </button>
       </div>
+
+      {progress?.quests && progress.quests.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h2>⚡ Today's Quests</h2>
+            <span className="muted small">bonus XP · resets daily</span>
+          </div>
+          {progress.quests.map((q) => (
+            <div key={q.id} className={`quest-row ${q.done ? "done" : ""}`}>
+              <span className="q-emoji">{q.emoji}</span>
+              <div style={{ flex: 1 }}>
+                <div className="q-title">{q.title}</div>
+                <div className="q-bar"><div className="fill" style={{ width: `${Math.min(100, (q.progress / q.target) * 100)}%` }} /></div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="q-status">{q.done ? "✓ Done" : `${Math.min(q.progress, q.target)}/${q.target}`}</div>
+                <div className="q-xp">+{q.bonusXp} XP</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!squad && (
         <div className="hero" style={{ padding: 18 }}>

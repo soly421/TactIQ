@@ -58,6 +58,7 @@ export interface FormationPosition {
   x: number;
   y: number;
   keyInstructions: string[];
+  suggestedPlayer?: string;
 }
 
 export interface FormationAnalysis {
@@ -83,6 +84,7 @@ export interface Badge {
 export interface AwardResult {
   xpGained: number;
   newBadges: { id: string; name: string; emoji: string; description: string }[];
+  questsCompleted: { id: string; title: string; emoji: string; bonusXp: number }[];
   leveledUp: boolean;
 }
 
@@ -95,13 +97,42 @@ export interface Progress {
   streak: number;
   counts: Record<string, number>;
   advisorsUsed: number;
+  quests: Quest[];
   badges: Badge[];
   usage: { used: number; limit: number };
   leaderboard: { rank: number; name: string; xp: number; you?: boolean }[];
 }
 
+export interface PlayerNote {
+  name: string;
+  number: string;
+  positions: string;
+  foot: string;
+  notes: string;
+}
+
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  plan: "free" | "pro";
+  club: { id: number; name: string; code: string } | null;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  emoji: string;
+  target: number;
+  bonusXp: number;
+  progress: number;
+  done: boolean;
+}
+
 export interface SquadProfile {
   teamName: string;
+  players?: PlayerNote[];
   coachExperience: "new" | "intermediate" | "experienced";
   ageGroup: string;
   format: string;
@@ -164,4 +195,27 @@ export interface GamePlan {
   benchNotes: string[];
   ifChasing: string[];
   ifProtecting: string[];
+}
+
+export interface SeasonPlan {
+  title: string;
+  ageGroup: string;
+  weeks: { week: number; block: string; theme: string; objectives: string[]; sessionIdeas: string[]; gameFocus: string }[];
+  principles: string[];
+  checkpoints: string[];
+}
+
+export interface ClubOverview {
+  club: { name: string; code: string; philosophy: string; isAdmin: boolean };
+  coaches: { id: number; name: string; xp: number; streak: number; sessions: number; matchdays: number; chats: number; lastActiveDay: string; level: { level: number; title: string } }[];
+  totals: { coaches: number; sessions: number; xp: number; activeToday: number };
+}
+
+export interface ClubSession {
+  id: number;
+  title: string;
+  description: string;
+  content: string;
+  created_at: string;
+  uploaded_by_name?: string;
 }

@@ -1,4 +1,5 @@
-import { loadStore, saveStore, today, type Progress } from "./store.js";
+import { getProgress, pushXpHistory, saveProgress, today, type Progress } from "./store.js";
+import { recordQuestProgress, type QuestDef } from "./quests.js";
 
 export const FREE_DAILY_MESSAGES = 30;
 
@@ -63,15 +64,14 @@ export function levelFor(xp: number) {
 export interface AwardResult {
   xpGained: number;
   newBadges: { id: string; name: string; emoji: string; description: string }[];
+  questsCompleted: { id: string; title: string; emoji: string; bonusXp: number }[];
   leveledUp: boolean;
 }
 
-export function award(action: XpAction, advisorId?: string): AwardResult {
-  const store = loadStore();
-  const p = store.progress;
+export function award(userId: number, action: XpAction, advisorId?: string): AwardResult {
+  const p = getProgress(userId);
   const before = levelFor(p.xp).level;
 
-  // streak
   const t = today();
   if (p.lastActiveDay !== t) {
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
@@ -79,18 +79,26 @@ export function award(action: XpAction, advisorId?: string): AwardResult {
     p.lastActiveDay = t;
   }
 
-  p.xp += XP_RULES[action];
+  let gained = XP_RULES[action];
   p.counts[action] = (p.counts[action] ?? 0) + 1;
   if (advisorId && !p.advisorsUsed.includes(advisorId)) p.advisorsUsed.push(advisorId);
+
+  const questsCompleted: QuestDef[] = recordQuestProgress(userId, action);
+  gained += questsCompleted.reduce((a, q) => a + q.bonusXp, 0);
+  p.xp += gained;
 
   const newBadges = BADGES.filter((b) => !p.badges.includes(b.id) && b.earned(p)).map((b) => {
     p.badges.push(b.id);
     return { id: b.id, name: b.name, emoji: b.emoji, description: b.description };
   });
 
-  store.xpHistory.push({ t: new Date().toISOString(), xp: p.xp });
-  if (store.xpHistory.length > 500) store.xpHistory.splice(0, store.xpHistory.length - 500);
+  saveProgress(userId, p);
+  pushXpHistory(userId, p.xp);
 
-  saveStore();
-  return { xpGained: XP_RULES[action], newBadges, leveledUp: levelFor(p.xp).level > before };
+  return {
+    xpGained: gained,
+    newBadges,
+    questsCompleted: questsCompleted.map((q) => ({ id: q.id, title: q.title, emoji: q.emoji, bonusXp: q.bonusXp })),
+    leveledUp: levelFor(p.xp).level > before,
+  };
 }

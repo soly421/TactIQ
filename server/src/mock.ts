@@ -173,15 +173,15 @@ export const MOCK_FORMATION = {
   formationRationale:
     "The 3-2-3 gives natural triangles on both sides, maps directly onto a 4-3-3 at 11v11, and always provides a spare player in build-up against the common 3-3-2 press.",
   positions: [
-    { label: "GK", role: "Sweeper-keeper", x: 50, y: 92, keyInstructions: ["Split the back three when we have the ball", "Play short unless pressed"] },
-    { label: "LCB", role: "Wide builder", x: 25, y: 75, keyInstructions: ["Step into midfield when free", "Cover the left channel"] },
-    { label: "CB", role: "Organizer", x: 50, y: 78, keyInstructions: ["Talk constantly", "First option from the GK"] },
-    { label: "RCB", role: "Wide builder", x: 75, y: 75, keyInstructions: ["Step into midfield when free", "Cover the right channel"] },
-    { label: "LCM", role: "Connector", x: 38, y: 55, keyInstructions: ["Receive side-on", "Find the wingers early"] },
-    { label: "RCM", role: "Connector", x: 62, y: 55, keyInstructions: ["Receive side-on", "Arrive late in the box"] },
-    { label: "LW", role: "Width provider", x: 15, y: 30, keyInstructions: ["Stay wide to stretch the pitch", "1v1 when isolated"] },
-    { label: "ST", role: "Reference striker", x: 50, y: 18, keyInstructions: ["Pin the last defender", "First presser out of possession"] },
-    { label: "RW", role: "Width provider", x: 85, y: 30, keyInstructions: ["Stay wide to stretch the pitch", "Back-post runs on far-side crosses"] },
+    { label: "GK", role: "Sweeper-keeper", x: 50, y: 92, keyInstructions: ["Split the back three when we have the ball", "Play short unless pressed"], suggestedPlayer: "" },
+    { label: "LCB", role: "Wide builder", x: 25, y: 75, keyInstructions: ["Step into midfield when free", "Cover the left channel"], suggestedPlayer: "" },
+    { label: "CB", role: "Organizer", x: 50, y: 78, keyInstructions: ["Talk constantly", "First option from the GK"], suggestedPlayer: "" },
+    { label: "RCB", role: "Wide builder", x: 75, y: 75, keyInstructions: ["Step into midfield when free", "Cover the right channel"], suggestedPlayer: "" },
+    { label: "LCM", role: "Connector", x: 38, y: 55, keyInstructions: ["Receive side-on", "Find the wingers early"], suggestedPlayer: "" },
+    { label: "RCM", role: "Connector", x: 62, y: 55, keyInstructions: ["Receive side-on", "Arrive late in the box"], suggestedPlayer: "" },
+    { label: "LW", role: "Width provider", x: 15, y: 30, keyInstructions: ["Stay wide to stretch the pitch", "1v1 when isolated"], suggestedPlayer: "" },
+    { label: "ST", role: "Reference striker", x: 50, y: 18, keyInstructions: ["Pin the last defender", "First presser out of possession"], suggestedPlayer: "" },
+    { label: "RW", role: "Width provider", x: 85, y: 30, keyInstructions: ["Stay wide to stretch the pitch", "Back-post runs on far-side crosses"], suggestedPlayer: "" },
   ],
   inPossession: [
     "Back three splits, GK joins build-up for a 4v2 against most presses",
@@ -241,3 +241,16 @@ export const MOCK_LIVE_REPLY =
 
 export const MOCK_DEBRIEF =
   "## What the Data Says\n[Demo mode — set ANTHROPIC_API_KEY for live analysis]\nYour numbers suggest a game you controlled but didn't finish: plenty of territory, low chance quality.\n\n## What Went Well\n- Build-up under pressure held up\n- Defensive shape between boxes\n\n## Fix This Week\n- Final-third decisions: cutback vs cross\n- Box arrivals: nobody attacking the near post\n\n## Player Messages\n- Keeper: brilliant distribution, keep it\n- Striker: your movement created everything, goals will come\n\n## Next Session Focus\nFinishing from cutbacks — the Library's \"Put It In The Mixer\" adapted to your age group.";
+
+export const MOCK_SEASON_PLAN = {
+  title: "Fall Season: Brave On The Ball",
+  ageGroup: "U10",
+  weeks: [
+    { week: 1, block: "Foundation", theme: "Ball mastery & 1v1 bravery", objectives: ["High touch volume", "Try skills without fear"], sessionIdeas: ["Futsal-style tight-space circuits", "1v1 arenas with skill bonuses"], gameFocus: "Praise every brave dribble, ignore the outcome" },
+    { week: 2, block: "Foundation", theme: "First touch & scanning", objectives: ["Touch away from pressure", "Look before receiving"], sessionIdeas: ["Gate passing with scans", "4v1 rondo ladder"], gameFocus: "Count scans out loud from the sideline" },
+    { week: 3, block: "In possession", theme: "Playing out from the back", objectives: ["Keeper as +1", "Split defenders receive wide"], sessionIdeas: ["3-zone build-up game"], gameFocus: "Goal kicks: play short every time, whatever happens" },
+    { week: 4, block: "In possession", theme: "Support angles", objectives: ["Two options for every carrier"], sessionIdeas: ["Triangle keep-away", "3v1 to 3v2 progression"], gameFocus: "Freeze one moment per half to show support shape" },
+  ],
+  principles: ["Development over results all season", "Every player plays every position", "Success = brave attempts"],
+  checkpoints: ["Week 4: players ask to play out short on goal kicks", "Week 8: first-touch turns appear in games unprompted", "Week 12: team recognizably plays through thirds"],
+};

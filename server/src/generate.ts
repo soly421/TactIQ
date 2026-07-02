@@ -1,14 +1,21 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getClient, hasApiKey, requestExtras } from "./anthropic.js";
-import { loadStore } from "./store.js";
+import { getSeason, getSquad, getUserClub } from "./store.js";
 
-export function teamContext(): string {
-  const store = loadStore();
-  if (!store.squad) return "\n<team_memory>\nThe coach has not set up a team profile yet. If relevant, suggest they add their squad in the My Team tab so advice can be personalized.\n</team_memory>";
-  const s = store.squad;
-  const recent = store.season
-    .slice(0, 8)
+export function teamContext(userId: number): string {
+  const squad = getSquad(userId);
+  const club = getUserClub(userId);
+  const clubBlock = club?.philosophy
+    ? `\n<club_philosophy>\nThis coach's club (${club.name}) has a club-wide coaching philosophy set by its director. Align advice with it:\n${club.philosophy}\n</club_philosophy>`
+    : "";
+  if (!squad) return `${clubBlock}\n<team_memory>\nThe coach has not set up a team profile yet. If relevant, suggest they add their squad in the My Team tab so advice can be personalized.\n</team_memory>`;
+  const s = squad;
+  const roster = (squad.players ?? [])
+    .filter((p) => p.name)
+    .map((p) => `  - ${p.name}${p.number ? ` (#${p.number})` : ""} | positions: ${p.positions || "?"} | foot: ${p.foot || "?"} | ${p.notes || ""}`)
+    .join("\n");
+  const recent = getSeason(userId, 8)
     .map((e) => `- [${e.date.slice(0, 10)}] ${e.kind}: ${e.title} — ${e.summary}`)
     .join("\n");
   return `
@@ -19,10 +26,11 @@ This coach's team (use it — make every answer specific to THIS team):
 - Preferred style: ${s.preferredStyle || "not specified"}
 - Roster notes: ${s.rosterNotes || "none"}
 - Season goals: ${s.seasonGoals || "none"}
+${roster ? `- Roster (use these actual players by name in advice, lineups, and development notes):\n${roster}` : "- Roster: not entered"}
 
 Recent season activity (their training/tactical history — build on it, reference it, avoid repeating themes back-to-back):
 ${recent || "- nothing yet, this is early in the season"}
-</team_memory>`;
+</team_memory>${clubBlock}`;
 }
 
 interface StreamArgs {

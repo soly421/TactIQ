@@ -5,7 +5,10 @@ export function SessionPlanView({ plan }: { plan: SessionPlan }) {
   return (
     <div className="fade-in">
       <div className="hero" style={{ paddingBottom: 20 }}>
-        <h1 style={{ fontSize: 24 }}>{plan.title}</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <h1 style={{ fontSize: 24 }}>{plan.title}</h1>
+          <button className="btn ghost no-print" onClick={() => window.print()}>🖨️ Print / Save PDF</button>
+        </div>
         <p className="sub" style={{ margin: 0 }}>
           {plan.ageGroup} · {plan.durationMinutes} min · {plan.theme}
         </p>

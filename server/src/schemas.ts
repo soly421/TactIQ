@@ -117,8 +117,9 @@ export const FORMATION_ANALYSIS_SCHEMA = {
           x: { type: "number" },
           y: { type: "number" },
           keyInstructions: { type: "array", items: { type: "string" } },
+          suggestedPlayer: { type: "string", description: "Name from the coach's roster who fits this position best, or empty string if no roster" },
         },
-        required: ["label", "role", "x", "y", "keyInstructions"],
+        required: ["label", "role", "x", "y", "keyInstructions", "suggestedPlayer"],
         additionalProperties: false,
       },
     },
@@ -179,5 +180,34 @@ export const GAME_PLAN_SCHEMA = {
     "matchTitle", "keysToTheGame", "inPossession", "outOfPossession", "setPieces",
     "matchups", "firstTenMinutes", "pregameTalk", "benchNotes", "ifChasing", "ifProtecting",
   ],
+  additionalProperties: false,
+} as const;
+
+export const SEASON_PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    ageGroup: { type: "string" },
+    weeks: {
+      type: "array",
+      description: "One entry per training week, in order",
+      items: {
+        type: "object",
+        properties: {
+          week: { type: "integer" },
+          block: { type: "string", description: "The periodization block this week belongs to, e.g. 'Foundation', 'In possession', 'Competition prep'" },
+          theme: { type: "string" },
+          objectives: { type: "array", items: { type: "string" } },
+          sessionIdeas: { type: "array", items: { type: "string" }, description: "1-2 concrete session concepts for this week" },
+          gameFocus: { type: "string", description: "What to watch for / emphasize in the weekend game" },
+        },
+        required: ["week", "block", "theme", "objectives", "sessionIdeas", "gameFocus"],
+        additionalProperties: false,
+      },
+    },
+    principles: { type: "array", items: { type: "string" }, description: "Season-long development principles" },
+    checkpoints: { type: "array", items: { type: "string" }, description: "How to know it's working at weeks ~4, ~8, ~12" },
+  },
+  required: ["title", "ageGroup", "weeks", "principles", "checkpoints"],
   additionalProperties: false,
 } as const;

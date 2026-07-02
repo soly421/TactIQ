@@ -35,6 +35,11 @@ export function FormationPitch({ positions }: { positions: FormationPosition[] }
               <text x={x} y={y + 1.3} fontSize="3.2" fill="#fff" textAnchor="middle" fontWeight="bold">
                 {pos.label}
               </text>
+              {pos.suggestedPlayer && (
+                <text x={x} y={y + 7} fontSize="2.6" fill="#ffe14d" textAnchor="middle" fontWeight="bold">
+                  {pos.suggestedPlayer.split(" ")[0]}
+                </text>
+              )}
             </g>
           );
         })}
@@ -44,6 +49,7 @@ export function FormationPitch({ positions }: { positions: FormationPosition[] }
         <div className="card fade-in" style={{ marginTop: 12 }}>
           <h3>
             {selected.label} — <span style={{ color: "var(--accent)" }}>{selected.role}</span>
+            {selected.suggestedPlayer && <span className="muted"> · {selected.suggestedPlayer}</span>}
           </h3>
           <ul className="points">
             {selected.keyInstructions.map((k, i) => (
