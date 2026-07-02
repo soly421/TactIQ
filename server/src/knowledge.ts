@@ -1,6 +1,27 @@
 // Curated coaching knowledge injected into system prompts. This is the seed of
 // TactIQ's knowledge base; the roadmap replaces it with a retrieval pipeline over
 // licensed session libraries, technical reports, and transcript corpora.
+import { SIGNATURE_EXERCISES } from "./exercises.js";
+
+// Index of the Library's signature catalog, grouped by phase, so every advisor
+// and generator can recommend real unlockable sessions BY EXACT NAME.
+function buildLibraryIndex(): string {
+  const byPhase = new Map<string, string[]>();
+  for (const e of SIGNATURE_EXERCISES) {
+    const bands = e.ageBands.length > 1 ? `${e.ageBands[0]}→${e.ageBands[e.ageBands.length - 1]}` : e.ageBands[0];
+    const list = byPhase.get(e.phase) ?? [];
+    list.push(`${e.name} (${bands})`);
+    byPhase.set(e.phase, list);
+  }
+  const sections = [...byPhase.entries()].map(([phase, names]) => `${phase.toUpperCase()}: ${names.join("; ")}`);
+  return `
+<library_catalog>
+TactIQ's Library contains these signature exercises (name + suitable age bands). When you recommend training, name the EXACT exercise(s) from this catalog that fit — the coach can unlock them in the Library tab and get the full animated session adapted to their team. Only reference catalog entries by name if they appear in this list.
+${sections.join("\n")}
+</library_catalog>`;
+}
+
+export const LIBRARY_INDEX = buildLibraryIndex();
 
 export const AGE_GROUP_GUIDELINES = `
 <age_group_guidelines>
@@ -156,6 +177,7 @@ ${AGE_GROUP_GUIDELINES}
 ${TACTICAL_CONCEPTS}
 ${ZONE_CURRICULUM}
 ${FORMATION_SYSTEMS}
+${LIBRARY_INDEX}
 ${MODERN_GAME_INTELLIGENCE}
 ${COACH_EXPERIENCE_ADAPTATION}
 ${SAFETY_AND_TONE}`;
