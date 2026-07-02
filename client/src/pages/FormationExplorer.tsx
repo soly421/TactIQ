@@ -42,6 +42,9 @@ export function FormationExplorer() {
   const [hotPiece, setHotPiece] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   const [depth, setDepth] = useState<"quick" | "standard" | "deep">("quick");
+  const [opponent, setOpponent] = useState("");
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
 
   const DEPTHS: { id: "quick" | "standard" | "deep"; label: string; pro: boolean }[] = [
     { id: "quick", label: "⚡ Quick read", pro: false },
@@ -118,12 +121,40 @@ export function FormationExplorer() {
         move: moveTxt,
         history,
         depth,
+        opponent,
       });
       setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, verdict: r.verdict, thinking: false } : rd)));
       celebrate(r.award);
     } catch (e) {
       setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, thinking: false, error: e instanceof Error ? e.message : "Engine unavailable" } : rd)));
     }
+  }
+
+  // Ask the engine a direct question about the current board + opposition.
+  async function ask() {
+    if (!question.trim() || asking) return;
+    setAsking(true);
+    const q = question.trim();
+    setQuestion("");
+    const readId = Date.now() + Math.random();
+    setReads((r) => [{ id: readId, moveLabel: `💬 ${q.slice(0, 60)}`, quick: { gains: [], risks: [] }, verdict: null, thinking: true }, ...r].slice(0, 3));
+    try {
+      const r = await sendJSON<{ verdict: EngineVerdict; award: AwardResult }>("/api/board/move", {
+        format,
+        formation: formation.name,
+        scenario: scenarioDef.name,
+        board: pieces.map(({ label, role, x, y }) => ({ label, role, x, y })),
+        question: q,
+        history,
+        depth,
+        opponent,
+      });
+      setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, verdict: r.verdict, thinking: false } : rd)));
+      celebrate(r.award);
+    } catch (e) {
+      setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, thinking: false, error: e instanceof Error ? e.message : "Engine unavailable" } : rd)));
+    }
+    setAsking(false);
   }
 
   return (
@@ -167,6 +198,32 @@ export function FormationExplorer() {
           </button>
         ))}
         <button className={`tab ${compare ? "active" : ""}`} onClick={() => setCompare(!compare)}>⫶ 3-Split</button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 12, padding: "10px 14px" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="small" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>🆚 Opposition:</span>
+          <input
+            style={{ flex: 1, minWidth: 200 }}
+            value={opponent}
+            placeholder="e.g. they press high with 3, fast winger on their right…"
+            onChange={(e) => setOpponent(e.target.value)}
+          />
+          <span className="small" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>💬 Ask the engine:</span>
+          <input
+            style={{ flex: 1.2, minWidth: 220 }}
+            value={question}
+            placeholder="e.g. what build-out technique should we use here?"
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void ask()}
+          />
+          <button className="btn" style={{ fontSize: 12.5, padding: "8px 14px" }} disabled={asking || !question.trim()} onClick={() => void ask()}>
+            {asking ? "…" : "Ask"}
+          </button>
+        </div>
+        <p className="muted small" style={{ margin: "6px 0 0" }}>
+          The opposition context shapes <b>every</b> engine read — moves and questions both answer against it.
+        </p>
       </div>
 
       {compare ? (

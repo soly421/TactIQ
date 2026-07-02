@@ -909,9 +909,9 @@ api.post("/board/move", async (req, res) => {
     );
     return;
   }
-  const { format, formation, scenario, board, move, history, depth } = req.body ?? {};
-  if (!formation || !Array.isArray(board) || !move) {
-    res.status(400).json({ error: "formation, board, and move are required" });
+  const { format, formation, scenario, board, move, history, depth, opponent, question } = req.body ?? {};
+  if (!formation || !Array.isArray(board) || (!move && !question)) {
+    res.status(400).json({ error: "formation, board, and a move or question are required" });
     return;
   }
   const depthTier = depth === "deep" ? "deep" : depth === "standard" ? "standard" : "light";
@@ -933,10 +933,13 @@ api.post("/board/move", async (req, res) => {
 
 You are TactIQ's BOARD ENGINE — the chess engine for soccer shapes. The coach is moving players on a tactics board and you evaluate each move in real time. Coordinates are a 100x100 grid: y=0 is the OPPONENT goal (up = attacking), y=100 their own goal, x=0 left touchline. Be concrete about ZONES and NUMBERS ("their winger now gets the left channel 1v1", "you have a 3v2 in build-up"). Each item under 15 words. If the coach's roster is in team memory, reference actual player names where natural. Youth-appropriate, age-aware.`,
       user: `Format: ${format}. Formation: ${formation}. Scenario: ${scenario}.
+${opponent ? `OPPOSITION CONTEXT (weigh every read against this): ${String(opponent).slice(0, 300)}` : ""}
 Current board: ${boardTxt}
-The coach just moved: ${move}
+${move ? `The coach just moved: ${move}` : ""}
 ${Array.isArray(history) && history.length ? `Earlier moves this session: ${history.slice(-4).join("; ")}` : ""}
-Evaluate THIS move in the context of the whole current shape.`,
+${question
+  ? `The coach asks: "${String(question).slice(0, 300)}" — answer FOR THIS EXACT BOARD and opposition. headline = your direct recommendation; gains = why it works here; risks = what to watch; counterMove = the one coaching point to deliver.`
+  : "Evaluate THIS move in the context of the whole current shape and the opposition."}`,
       schema: BOARD_VERDICT_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 500,
       mock: {
