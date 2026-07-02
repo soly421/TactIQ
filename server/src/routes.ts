@@ -860,6 +860,74 @@ api.put("/settings/plan", (req, res) => {
   res.json(settingsPayload(userId));
 });
 
+// ---- The Board Engine: real-time AI read of a modified formation ----
+// Chess.com for coaches: drop a piece, the engine tells you what you gained
+// and what you gave away. Cheapest tier, tiny output, daily cap.
+const BOARD_READS_PER_DAY: Record<Plan, number> = { free: 20, pro: 300 };
+
+const BOARD_VERDICT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["headline", "gains", "risks", "counterMove"],
+  properties: {
+    headline: { type: "string", description: "One punchy sentence naming the tactical idea of this move" },
+    gains: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "What this shape wins, concretely (zones, overloads, numbers)" },
+    risks: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "What it concedes and WHERE the space is" },
+    counterMove: { type: "string", description: "The one adjustment that covers the biggest risk (name the role that must react)" },
+  },
+};
+
+api.post("/board/move", async (req, res) => {
+  const userId = uid(req);
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `boardcap:${userId}:${day}`;
+  const used = Number(kvGet(key) ?? 0);
+  if (used >= BOARD_READS_PER_DAY[planOf(userId)]) {
+    res.status(planOf(userId) === "free" ? 403 : 429).json(
+      planOf(userId) === "free"
+        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free engine reads today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
+        : { error: "Daily engine limit reached — resets tomorrow." },
+    );
+    return;
+  }
+  const { format, formation, scenario, board, move, history } = req.body ?? {};
+  if (!formation || !Array.isArray(board) || !move) {
+    res.status(400).json({ error: "formation, board, and move are required" });
+    return;
+  }
+  kvSet(key, String(used + 1));
+  try {
+    const boardTxt = (board as { label: string; role: string; x: number; y: number }[])
+      .map((p) => `${p.label} (${p.role}) at [${Math.round(p.x)},${Math.round(p.y)}]`)
+      .join("; ");
+    const verdict = await generateStructured<{ headline: string; gains: string[]; risks: string[]; counterMove: string }>({
+      tier: "light",
+      userId,
+      system: `${baseSystemPrompt()}${teamContext(userId)}
+
+You are TactIQ's BOARD ENGINE — the chess engine for soccer shapes. The coach is moving players on a tactics board and you evaluate each move in real time. Coordinates are a 100x100 grid: y=0 is the OPPONENT goal (up = attacking), y=100 their own goal, x=0 left touchline. Be concrete about ZONES and NUMBERS ("their winger now gets the left channel 1v1", "you have a 3v2 in build-up"). Each item under 15 words. If the coach's roster is in team memory, reference actual player names where natural. Youth-appropriate, age-aware.`,
+      user: `Format: ${format}. Formation: ${formation}. Scenario: ${scenario}.
+Current board: ${boardTxt}
+The coach just moved: ${move}
+${Array.isArray(history) && history.length ? `Earlier moves this session: ${history.slice(-4).join("; ")}` : ""}
+Evaluate THIS move in the context of the whole current shape.`,
+      schema: BOARD_VERDICT_SCHEMA as unknown as Record<string, unknown>,
+      maxTokens: 500,
+      mock: {
+        headline: "Bold — you've traded cover for control (demo read)",
+        gains: ["Extra man ahead of the ball in build-up", "Their pivot now has two problems to mark"],
+        risks: ["The vacated zone is open for their counter", "Back line must shift across to cover"],
+        counterMove: "Drop the near-side midfielder one line to screen the gap.",
+      },
+    });
+    const gamify = award(userId, "board");
+    res.json({ verdict, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Engine read failed — try the next move." });
+  }
+});
+
 // ---- Community: weekly league, club cup, recap ----
 api.get("/community", (req, res) => {
   const userId = uid(req);

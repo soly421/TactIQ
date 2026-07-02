@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { SessionStudio } from "./SessionStudio";
 import { FormationLab } from "./FormationLab";
+import { FormationExplorer } from "./FormationExplorer";
 import { Playbook } from "./Playbook";
 import { FieldBoard } from "./FieldBoard";
 import { savePlanOffline } from "../savedPlans";
@@ -37,7 +38,7 @@ export function Studio() {
       {seg === "sessions" && <SessionStudio />}
       {seg === "scan" && <SessionScan />}
       {seg === "board" && <FieldBoard />}
-      {seg === "formations" && <FormationLab />}
+      {seg === "formations" && <FormationsTab />}
       {seg === "season" && (ent === null || ent.seasonPlanner ? <SeasonPlanner /> : (
         <div className="pro-gate">
           <h3>📅 The Season Planner is a Pro feature</h3>
@@ -184,6 +185,21 @@ function SeasonPlanner() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// Formations: the interactive encyclopedia + the AI formation analyst.
+function FormationsTab() {
+  const [mode, setMode] = useState<"explorer" | "analysis">("explorer");
+  return (
+    <div>
+      <div className="tabs" style={{ marginBottom: 14 }}>
+        <button className={`tab ${mode === "explorer" ? "active" : ""}`} onClick={() => setMode("explorer")}>♟️ Interactive Board</button>
+        <button className={`tab ${mode === "analysis" ? "active" : ""}`} onClick={() => setMode("analysis")}>🔬 AI Formation Analysis</button>
+      </div>
+      {mode === "explorer" ? <FormationExplorer /> : <FormationLab />}
     </div>
   );
 }

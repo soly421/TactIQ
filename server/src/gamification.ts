@@ -11,7 +11,7 @@ export function streakFreezeAvailable(userId: number): boolean {
 
 export const FREE_DAILY_MESSAGES = 30;
 
-export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film";
+export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film" | "board";
 
 const XP_RULES: Record<XpAction, number> = {
   chat: 5,
@@ -24,6 +24,7 @@ const XP_RULES: Record<XpAction, number> = {
   matchday: 45,
   rate: 2,
   film: 45,
+  board: 8,
 };
 
 export const LEVELS = [
@@ -64,6 +65,7 @@ export const BADGES: BadgeDef[] = [
   { id: "full-staff", name: "Full Staff", emoji: "🎬", description: "Run pre-game, live, and post-game in Match Day", earned: (p) => (p.counts.matchday ?? 0) >= 3 },
   { id: "quality-scout", name: "Quality Scout", emoji: "🔎", description: "Rate 10 outputs to sharpen TactIQ", earned: (p) => (p.counts.rate ?? 0) >= 10 },
   { id: "film-analyst", name: "Film Analyst", emoji: "🎞️", description: "Analyze your first video clip in the Film Room", earned: (p) => (p.counts.film ?? 0) >= 1 },
+  { id: "grandmaster", name: "Grandmaster", emoji: "♟️", description: "Get 25 engine reads on the tactics board", earned: (p) => (p.counts.board ?? 0) >= 25 },
 ];
 
 export function levelFor(xp: number) {
