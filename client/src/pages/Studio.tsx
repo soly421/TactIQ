@@ -4,6 +4,7 @@ import { FormationLab } from "./FormationLab";
 import { Playbook } from "./Playbook";
 import { FieldBoard } from "./FieldBoard";
 import { FilmRoom } from "./FilmRoom";
+import { savePlanOffline } from "../savedPlans";
 import { sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
@@ -69,6 +70,7 @@ function SessionScan() {
     try {
       const r = await sendJSON<{ plan: SessionPlan; award: AwardResult }>("/api/session-scan", { image, notes });
       setPlan(r.plan);
+      savePlanOffline(r.plan);
       celebrate(r.award);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Scan failed");

@@ -177,6 +177,8 @@ export interface SessionTemplate {
   theme: string;
   description: string;
   unlocked: boolean;
+  collection?: "signature" | "blueprint";
+  tradition?: string;
 }
 
 export interface EngineInfo {

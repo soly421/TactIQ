@@ -1,7 +1,10 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import { db } from "./db.js";
+import { consumePasswordReset, createPasswordReset, findUserByEmail } from "./store.js";
+import { emailConfigured, sendPasswordReset } from "./email.js";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "tactiq-dev-secret-change-in-production";
 if (!process.env.JWT_SECRET) {
@@ -116,6 +119,38 @@ authRouter.post("/club", requireAuth, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e instanceof Error ? e.message : "Club error" });
   }
+});
+
+// Password reset: request a one-hour token by email. Always answers 200 so
+// the endpoint can't be used to probe which emails have accounts.
+authRouter.post("/forgot", async (req, res) => {
+  if (!emailConfigured) {
+    res.status(400).json({ error: "Password reset by email isn't configured on this server yet — contact your club admin." });
+    return;
+  }
+  const user = findUserByEmail(String(req.body?.email ?? ""));
+  if (user) {
+    const token = crypto.randomBytes(24).toString("base64url");
+    createPasswordReset(user.id, token);
+    await sendPasswordReset(user.email, user.name, token);
+  }
+  res.json({ ok: true, message: "If that email has an account, a reset link is on its way." });
+});
+
+authRouter.post("/reset", async (req, res) => {
+  const { token, password } = req.body ?? {};
+  if (!token || String(password ?? "").length < 8) {
+    res.status(400).json({ error: "A reset token and a password of at least 8 characters are required" });
+    return;
+  }
+  const userId = consumePasswordReset(String(token));
+  if (!userId) {
+    res.status(400).json({ error: "That reset link is invalid or expired — request a new one." });
+    return;
+  }
+  const hash = await bcrypt.hash(String(password), 10);
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
+  res.json({ token: sign(userId) });
 });
 
 // Full account + data deletion (privacy requirement)

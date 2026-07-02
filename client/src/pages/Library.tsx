@@ -1,3 +1,4 @@
+import { savePlanOffline } from "../savedPlans";
 import { useEffect, useMemo, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
@@ -22,6 +23,7 @@ const LEVELS = ["all", "foundation", "intermediate", "advanced"];
 export function Library() {
   const { celebrate } = useGamify();
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
+  const [collection, setCollection] = useState<"signature" | "blueprint" | "all">("signature");
   const [phase, setPhase] = useState("all");
   const [band, setBand] = useState("all");
   const [level, setLevel] = useState("all");
@@ -43,12 +45,13 @@ export function Library() {
     () =>
       templates.filter(
         (t) =>
+          (collection === "all" || (t.collection ?? "blueprint") === collection) &&
           (phase === "all" || t.phase === phase) &&
           (band === "all" || t.ageBand === band) &&
           (level === "all" || t.complexity === level) &&
           (!search || `${t.topicName} ${t.description}`.toLowerCase().includes(search.toLowerCase())),
       ),
-    [templates, phase, band, level, search],
+    [templates, collection, phase, band, level, search],
   );
 
   async function unlock(t: SessionTemplate) {
@@ -56,6 +59,7 @@ export function Library() {
     setLoadingId(t.id);
     try {
       const r = await sendJSON<{ plan: SessionPlan; award?: AwardResult; entryId?: number }>(`/api/library/${t.id}/generate`, {});
+      savePlanOffline(r.plan);
       setOpenPlan({ plan: r.plan, entryId: r.entryId });
       if (r.award) celebrate(r.award);
       void load();
@@ -78,11 +82,23 @@ export function Library() {
     <div className="fade-in">
       <h1>The Library</h1>
       <p className="sub">
-        <b>{templates.length.toLocaleString()} session blueprints</b> across every topic, phase, age band, and complexity level.
-        Unlock any of them and TactIQ builds the full session live — visualized, animated, and adapted to <i>your</i> team, so no
-        two coaches get the same session.
+        <b>{templates.length.toLocaleString()} sessions</b>: ⭐ <b>Signature Exercises</b> — named sessions from the zone curriculum and
+        the world's academy traditions (Spain, Netherlands, Belgium, England, Germany, France, Brazil…) — plus 🧬 <b>Topic Blueprints</b> covering
+        every topic × age band × complexity. Unlock any of them and TactIQ builds the full session live — visualized, animated, and
+        adapted to <i>your</i> team.
       </p>
 
+      <div className="tabs" style={{ marginBottom: 8 }}>
+        <button className={`tab ${collection === "signature" ? "active" : ""}`} onClick={() => setCollection("signature")}>
+          ⭐ Signature Exercises
+        </button>
+        <button className={`tab ${collection === "blueprint" ? "active" : ""}`} onClick={() => setCollection("blueprint")}>
+          🧬 Topic Blueprints
+        </button>
+        <button className={`tab ${collection === "all" ? "active" : ""}`} onClick={() => setCollection("all")}>
+          ✨ Everything
+        </button>
+      </div>
       <div className="tabs">
         {PHASES.map((p) => (
           <button key={p.id} className={`tab ${phase === p.id ? "active" : ""}`} onClick={() => setPhase(p.id)}>
@@ -117,8 +133,11 @@ export function Library() {
           <div key={t.id} className="card clickable" onClick={() => void unlock(t)}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
               <div>
-                <span className="phase-tag">{t.emoji} {t.phase.replace("-", " ")} · {t.complexity}</span>
+                <span className="phase-tag">
+                  {t.collection === "signature" ? "⭐ " : ""}{t.emoji} {t.phase.replace("-", " ")} · {t.complexity}
+                </span>
                 <h3 style={{ margin: "3px 0 4px" }}>{t.topicName}</h3>
+                {t.tradition && <p className="small" style={{ margin: "0 0 3px", color: "var(--gold, #e8b64c)", fontWeight: 600 }}>{t.tradition}</p>}
                 <p className="muted small" style={{ margin: 0 }}>{t.description}</p>
               </div>
               <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>

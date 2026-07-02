@@ -33,6 +33,46 @@ api.get("/health", (_req, res) => {
   res.json({ ok: true, live: hasAnyProvider() });
 });
 
+// ---- Try-before-signup: one instant session, no account, cheapest tier ----
+// The Speak/Cursor lesson: deliver the magic moment BEFORE asking for signup.
+const tryCounts = new Map<string, { day: string; n: number }>();
+const TRY_PER_DAY = 3;
+
+api.post("/try/session", async (req, res) => {
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "?";
+  const day = new Date().toISOString().slice(0, 10);
+  const entry = tryCounts.get(ip);
+  const n = entry?.day === day ? entry.n : 0;
+  if (n >= TRY_PER_DAY) {
+    res.status(429).json({ error: "Free preview limit reached for today — create a free account to keep going." });
+    return;
+  }
+  tryCounts.set(ip, { day, n: n + 1 });
+  if (tryCounts.size > 5000) tryCounts.clear(); // bounded memory
+
+  const { ageGroup, theme } = req.body ?? {};
+  if (!ageGroup || !theme) {
+    res.status(400).json({ error: "ageGroup and theme are required" });
+    return;
+  }
+  try {
+    const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
+      tier: "light",
+      userId: 0, // unauthenticated preview — excluded from the per-user ledger
+      system: `${baseSystemPrompt()}
+
+You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid. Follow the arrival -> technical -> pressure -> game arc. This is a first-taste preview for a coach who hasn't signed up yet — make it genuinely excellent.`,
+      user: `Design a 75-minute training session for a ${ageGroup} team. Theme: ${theme}.`,
+      schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
+      mock: { ...MOCK_SESSION_PLAN, title: `${theme} (demo sample)` },
+    });
+    res.json({ plan: plan_, remaining: TRY_PER_DAY - n - 1 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Generation failed — try again" });
+  }
+});
+
 // Everything below requires a signed-in coach.
 api.use(requireAuth);
 
@@ -318,7 +358,7 @@ api.post("/library/:id/generate", async (req, res) => {
 You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid (y=0 is the top of the drill area). Place players, cones, balls, goals, and 2-5 movement arrows that show the KEY picture of the activity. Diagrams must be realistic. Follow the arrival -> technical -> pressure -> game arc.
 
 This session is from TactIQ's library. Build it to spec:
-- Topic: ${template.topicName} (${template.phase} phase)
+- Topic: ${template.topicName} (${template.phase} phase)${template.collection === "signature" ? `\n- This is a SIGNATURE exercise${template.tradition ? ` from the ${template.tradition}` : ""}: build the session AROUND this exact exercise as the centerpiece — stay faithful to its organization and rules, add a fitting warm-up before and a game after.` : ""}
 - Core concept to train: ${template.concept}
 - Complexity: ${template.complexity} — ${template.complexity === "foundation" ? "core habits, simple pictures, minimal rules" : template.complexity === "intermediate" ? "add pressure, decisions, and game-realistic pictures" : "full tactical detail, opposition pictures, position-specific roles"}
 - The session must be UNIQUE and specific to this topic/complexity/age — not a generic template.`,

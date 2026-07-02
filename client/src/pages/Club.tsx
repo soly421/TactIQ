@@ -2,6 +2,89 @@ import { useCallback, useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import type { ClubComment, ClubOverview, ClubSession, User } from "../types";
 
+interface ClubReportData {
+  clubName: string;
+  periodDays: number;
+  license: { planTier: string; seats: number };
+  coaches: { name: string; sessions: number; matchdays: number; conversations: number; film: number; ratings: number; lastActiveDay: string }[];
+  totals: { sessions: number; matchdays: number; conversations: number; film: number; ratings: number };
+}
+
+// The DOC monthly report + club-license purchase: the artifact that justifies
+// the invoice, and the button that pays it.
+function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: number }) {
+  const [report, setReport] = useState<ClubReportData | null>(null);
+  const [seats, setSeats] = useState(coachCount || 5);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void getJSON<ClubReportData>("/api/club/report").then(setReport).catch(() => {});
+  }, []);
+
+  async function buyLicense() {
+    setError("");
+    try {
+      const r = await sendJSON<{ url: string }>("/api/billing/club-checkout", { seats });
+      if (r.url) window.location.href = r.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Checkout failed");
+    }
+  }
+
+  if (!report) return null;
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>📈 Club report — last {report.periodDays} days</h2>
+        <button className="btn ghost no-print" onClick={() => window.print()}>🖨 Print / PDF</button>
+      </div>
+      <p className="muted small">
+        {report.license.planTier === "pro"
+          ? `👑 Club license active: ${report.license.seats} Pro seats — every coach gets the Deep Tactical engine.`
+          : "No club license yet — coaches are on individual plans."}
+      </p>
+      <table className="stats-table">
+        <thead>
+          <tr><th>Coach</th><th>Sessions</th><th>Match days</th><th>Conversations</th><th>Film</th><th>Ratings</th><th>Last active</th></tr>
+        </thead>
+        <tbody>
+          {report.coaches.map((c) => (
+            <tr key={c.name}>
+              <td><b>{c.name}</b></td>
+              <td>{c.sessions}</td>
+              <td>{c.matchdays}</td>
+              <td>{c.conversations}</td>
+              <td>{c.film}</td>
+              <td>{c.ratings}</td>
+              <td className="muted">{c.lastActiveDay || "—"}</td>
+            </tr>
+          ))}
+          <tr style={{ fontWeight: 700 }}>
+            <td>Club total</td>
+            <td>{report.totals.sessions}</td>
+            <td>{report.totals.matchdays}</td>
+            <td>{report.totals.conversations}</td>
+            <td>{report.totals.film}</td>
+            <td>{report.totals.ratings}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      {isAdmin && report.license.planTier !== "pro" && (
+        <div className="no-print" style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <b>License the whole club:</b>
+          <label className="field" style={{ margin: 0 }}>
+            <input type="number" min={1} max={200} value={seats} style={{ width: 80 }} onChange={(e) => setSeats(Number(e.target.value))} />
+          </label>
+          <span className="muted small">Pro seats</span>
+          <button className="btn" onClick={() => void buyLicense()}>👑 Buy club license →</button>
+          {error && <span className="error-box" style={{ margin: 0 }}>{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Club mode: the Director of Coaching's view — coach activity, club philosophy,
 // and club-wide session distribution.
 export function Club({ user }: { user: User }) {
@@ -111,6 +194,8 @@ export function Club({ user }: { user: User }) {
         <div className="card"><div style={{ fontSize: 24, fontWeight: 800 }}>{totals.sessions}</div><div className="muted small">Sessions designed</div></div>
         <div className="card"><div style={{ fontSize: 24, fontWeight: 800 }}>{totals.xp.toLocaleString()}</div><div className="muted small">Club XP</div></div>
       </div>
+
+      <ClubReport isAdmin={club.isAdmin} coachCount={totals.coaches} />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Coach activity</h2>

@@ -1,7 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { findUserByStripeCustomer, getUserBilling, setPlanTier, setStripeIds } from "./store.js";
+import {
+  findClubByStripeCustomer, findUserByStripeCustomer, getClubBilling, getUserBilling,
+  getUserClub, setClubLicense, setPlanTier, setStripeIds,
+} from "./store.js";
 
 // ============================================================================
 // Stripe subscription billing for the Pro tier.
@@ -63,6 +66,39 @@ billingRouter.post("/checkout", async (req, res) => {
   }
 });
 
+// Club seat licensing: the DOC/admin buys N Pro seats for the whole club in
+// one subscription (quantity = seats). Requires STRIPE_PRICE_ID_CLUB_SEAT.
+billingRouter.post("/club-checkout", async (req, res) => {
+  if (!stripeConfigured || !process.env.STRIPE_PRICE_ID_CLUB_SEAT) {
+    res.status(400).json({ error: "Club billing is not configured on this server." });
+    return;
+  }
+  const userId = uid(req);
+  const club = getUserClub(userId);
+  if (!club || club.role !== "admin") {
+    res.status(403).json({ error: "Only the club admin can buy a club license." });
+    return;
+  }
+  const seats = Math.min(200, Math.max(1, Number(req.body?.seats) || 1));
+  const billing = getUserBilling(userId);
+  const clubBilling = getClubBilling(club.id);
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: process.env.STRIPE_PRICE_ID_CLUB_SEAT, quantity: seats }],
+      client_reference_id: `club:${club.id}`,
+      ...(clubBilling?.stripeCustomerId ? { customer: clubBilling.stripeCustomerId } : { customer_email: billing?.email }),
+      subscription_data: { metadata: { tactiqClubId: String(club.id), seats: String(seats) } },
+      success_url: `${baseUrl(req)}/?billing=success`,
+      cancel_url: `${baseUrl(req)}/?billing=cancelled`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("stripe club checkout error", err);
+    res.status(500).json({ error: "Couldn't start club checkout. Try again." });
+  }
+});
+
 // Open the Stripe customer portal (manage/cancel subscription, update card).
 billingRouter.post("/portal", async (req, res) => {
   if (!stripeConfigured) {
@@ -110,10 +146,21 @@ export async function stripeWebhook(req: Request, res: Response): Promise<void> 
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        const userId = Number(session.client_reference_id);
+        const ref = session.client_reference_id ?? "";
         const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
         const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-        if (userId && customerId) {
+        if (ref.startsWith("club:") && customerId) {
+          const clubId = Number(ref.slice(5));
+          // Seat count comes from the subscription's line-item quantity.
+          let seats = 1;
+          if (subscriptionId) {
+            const sub = await getStripe().subscriptions.retrieve(subscriptionId);
+            seats = sub.items.data[0]?.quantity ?? 1;
+          }
+          setClubLicense(clubId, "pro", seats, customerId, subscriptionId ?? undefined);
+          console.log(`[billing] club ${clubId} licensed: ${seats} pro seats (sub ${subscriptionId})`);
+        } else if (Number(ref) && customerId) {
+          const userId = Number(ref);
           setStripeIds(userId, customerId, subscriptionId ?? null);
           setPlanTier(userId, "pro");
           console.log(`[billing] user ${userId} upgraded to pro (sub ${subscriptionId})`);
@@ -123,9 +170,16 @@ export async function stripeWebhook(req: Request, res: Response): Promise<void> 
       case "customer.subscription.updated": {
         const sub = event.data.object;
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+        const active = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
+        const clubId = findClubByStripeCustomer(customerId);
+        if (clubId) {
+          const seats = sub.items.data[0]?.quantity ?? 1;
+          setClubLicense(clubId, active ? "pro" : "free", active ? seats : 0);
+          console.log(`[billing] club ${clubId} subscription ${sub.status} -> ${active ? `pro x${seats}` : "free"}`);
+          break;
+        }
         const userId = findUserByStripeCustomer(customerId);
         if (userId) {
-          const active = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
           setPlanTier(userId, active ? "pro" : "free");
           console.log(`[billing] user ${userId} subscription ${sub.status} -> ${active ? "pro" : "free"}`);
         }
@@ -134,6 +188,12 @@ export async function stripeWebhook(req: Request, res: Response): Promise<void> 
       case "customer.subscription.deleted": {
         const sub = event.data.object;
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+        const clubId = findClubByStripeCustomer(customerId);
+        if (clubId) {
+          setClubLicense(clubId, "free", 0);
+          console.log(`[billing] club ${clubId} license canceled -> free`);
+          break;
+        }
         const userId = findUserByStripeCustomer(customerId);
         if (userId) {
           setPlanTier(userId, "free");

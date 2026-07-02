@@ -128,6 +128,17 @@ CREATE TABLE IF NOT EXISTS quest_log (
   PRIMARY KEY (user_id, day, quest_id)
 );
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kv (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS model_calls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -149,3 +160,7 @@ export function today(): string {
 try { db.exec("ALTER TABLE clubs ADD COLUMN philosophy TEXT NOT NULL DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE clubs ADD COLUMN plan_tier TEXT NOT NULL DEFAULT 'free'"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE clubs ADD COLUMN seats INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }

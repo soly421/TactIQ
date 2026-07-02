@@ -173,9 +173,25 @@ export function getUnlockedTemplateIds(userId: number): Set<string> {
 }
 
 // ---- plan tier ----
+// Effective plan: a coach is Pro if they subscribed individually OR their
+// club holds an active club license with a seat available (seats are counted
+// against coach headcount, oldest members first).
 export function getPlanTier(userId: number): "free" | "pro" {
-  const row = db.prepare("SELECT plan FROM users WHERE id = ?").get(userId) as { plan: string } | undefined;
-  return row?.plan === "pro" ? "pro" : "free";
+  const row = db
+    .prepare(
+      `SELECT u.plan, c.plan_tier AS club_plan, c.seats, c.id AS club_id
+       FROM users u LEFT JOIN clubs c ON c.id = u.club_id WHERE u.id = ?`,
+    )
+    .get(userId) as { plan: string; club_plan: string | null; seats: number | null; club_id: number | null } | undefined;
+  if (!row) return "free";
+  if (row.plan === "pro") return "pro";
+  if (row.club_plan === "pro" && row.club_id) {
+    const seated = db
+      .prepare("SELECT id FROM users WHERE club_id = ? ORDER BY id ASC LIMIT ?")
+      .all(row.club_id, row.seats ?? 0) as { id: number }[];
+    if (seated.some((s) => s.id === userId)) return "pro";
+  }
+  return "free";
 }
 
 export function setPlanTier(userId: number, plan: "free" | "pro"): void {
@@ -243,6 +259,92 @@ export function setClubPhilosophy(clubId: number, text: string): void {
   db.prepare("UPDATE clubs SET philosophy = ? WHERE id = ?").run(text.slice(0, 4000), clubId);
 }
 
+// ---- club licensing ----
+export function getClubBilling(clubId: number): { stripeCustomerId: string | null; planTier: string; seats: number } | null {
+  const row = db.prepare("SELECT stripe_customer_id, plan_tier, seats FROM clubs WHERE id = ?").get(clubId) as
+    | { stripe_customer_id: string | null; plan_tier: string; seats: number }
+    | undefined;
+  return row ? { stripeCustomerId: row.stripe_customer_id, planTier: row.plan_tier, seats: row.seats } : null;
+}
+
+export function setClubLicense(clubId: number, planTier: "free" | "pro", seats: number, customerId?: string, subscriptionId?: string): void {
+  if (customerId !== undefined) {
+    db.prepare("UPDATE clubs SET plan_tier = ?, seats = ?, stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?").run(
+      planTier, seats, customerId, subscriptionId ?? null, clubId,
+    );
+  } else {
+    db.prepare("UPDATE clubs SET plan_tier = ?, seats = ? WHERE id = ?").run(planTier, seats, clubId);
+  }
+}
+
+export function findClubByStripeCustomer(customerId: string): number | null {
+  const row = db.prepare("SELECT id FROM clubs WHERE stripe_customer_id = ?").get(customerId) as { id: number } | undefined;
+  return row?.id ?? null;
+}
+
+// The DOC monthly report: per-coach activity over the last N days, from the
+// season ledger and ratings — the artifact that justifies the club invoice.
+export function clubReport(clubId: number, days = 30): {
+  coaches: { name: string; sessions: number; matchdays: number; conversations: number; film: number; ratings: number; lastActiveDay: string }[];
+  totals: { sessions: number; matchdays: number; conversations: number; film: number; ratings: number };
+} {
+  const rows = db
+    .prepare(
+      `SELECT u.name, p.last_active_day,
+        SUM(CASE WHEN s.kind = 'session' THEN 1 ELSE 0 END) sessions,
+        SUM(CASE WHEN s.kind = 'match' THEN 1 ELSE 0 END) matchdays,
+        SUM(CASE WHEN s.kind IN ('chat','guidance') THEN 1 ELSE 0 END) conversations,
+        SUM(CASE WHEN s.kind = 'film' THEN 1 ELSE 0 END) film,
+        (SELECT COUNT(*) FROM feedback f WHERE f.user_id = u.id AND f.created_at >= datetime('now', '-' || ? || ' days')) ratings
+       FROM users u
+       JOIN progress p ON p.user_id = u.id
+       LEFT JOIN season_entries s ON s.user_id = u.id AND s.date >= datetime('now', '-' || ? || ' days')
+       WHERE u.club_id = ?
+       GROUP BY u.id ORDER BY sessions DESC`,
+    )
+    .all(days, days, clubId) as { name: string; last_active_day: string; sessions: number; matchdays: number; conversations: number; film: number; ratings: number }[];
+  const coaches = rows.map((r) => ({
+    name: r.name, sessions: r.sessions ?? 0, matchdays: r.matchdays ?? 0, conversations: r.conversations ?? 0,
+    film: r.film ?? 0, ratings: r.ratings ?? 0, lastActiveDay: r.last_active_day,
+  }));
+  const totals = coaches.reduce(
+    (t, c) => ({
+      sessions: t.sessions + c.sessions, matchdays: t.matchdays + c.matchdays,
+      conversations: t.conversations + c.conversations, film: t.film + c.film, ratings: t.ratings + c.ratings,
+    }),
+    { sessions: 0, matchdays: 0, conversations: 0, film: 0, ratings: 0 },
+  );
+  return { coaches, totals };
+}
+
+// ---- kv (scheduler state) ----
+export function kvGet(k: string): string | null {
+  const row = db.prepare("SELECT v FROM kv WHERE k = ?").get(k) as { v: string } | undefined;
+  return row?.v ?? null;
+}
+
+export function kvSet(k: string, v: string): void {
+  db.prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(k, v);
+}
+
+// ---- password resets ----
+export function createPasswordReset(userId: number, token: string, ttlMinutes = 60): void {
+  db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(userId);
+  db.prepare("INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+' || ? || ' minutes'))").run(token, userId, ttlMinutes);
+}
+
+export function consumePasswordReset(token: string): number | null {
+  const row = db.prepare("SELECT user_id FROM password_resets WHERE token = ? AND expires_at > datetime('now')").get(token) as { user_id: number } | undefined;
+  if (!row) return null;
+  db.prepare("DELETE FROM password_resets WHERE token = ?").run(token);
+  return row.user_id;
+}
+
+export function findUserByEmail(email: string): { id: number; name: string; email: string } | null {
+  const row = db.prepare("SELECT id, name, email FROM users WHERE email = ?").get(email.toLowerCase()) as { id: number; name: string; email: string } | undefined;
+  return row ?? null;
+}
+
 // ---- billing (Stripe linkage; plan tier is server-authoritative) ----
 export function getUserBilling(userId: number): { email: string; stripeCustomerId: string | null; stripeSubscriptionId: string | null } | null {
   const row = db.prepare("SELECT email, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?").get(userId) as
@@ -262,6 +364,11 @@ export function findUserByStripeCustomer(customerId: string): number | null {
 
 // ---- model call ledger (cost integrity: every AI call logged with token usage) ----
 export function logModelCall(c: { userId: number; provider: string; model: string; tier: string; inputTokens: number; outputTokens: number }): void {
+  if (c.userId <= 0) {
+    // Anonymous preview calls have no user row — log to console only.
+    console.log(`[engine] anon ${c.provider}/${c.model} (${c.tier}) in=${c.inputTokens} out=${c.outputTokens}`);
+    return;
+  }
   db.prepare("INSERT INTO model_calls (user_id, provider, model, tier, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)").run(
     c.userId, c.provider, c.model, c.tier, c.inputTokens, c.outputTokens,
   );

@@ -2,9 +2,40 @@ import { useEffect, useState } from "react";
 import { getJSON } from "../api";
 import { useGamify } from "../components/Gamify";
 import { XpChart } from "../components/XpChart";
+import { SessionPlanView } from "../components/SessionPlanView";
+import { getOfflinePlans, type SavedPlan } from "../savedPlans";
 import type { SeasonEntry, SquadProfile } from "../types";
 
 const KIND_ICON: Record<string, string> = { session: "📋", formation: "🔷", guidance: "💡", chat: "💬", match: "📣", film: "🎬" };
+
+// Sessions stashed in localStorage — they open even with zero connectivity,
+// because the field has no wifi.
+function OfflinePlans() {
+  const [plans] = useState<SavedPlan[]>(getOfflinePlans);
+  const [open, setOpen] = useState<SavedPlan | null>(null);
+
+  if (plans.length === 0) return null;
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h2>📥 Saved for the field</h2>
+        <span className="muted small">works offline</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {plans.map((s) => (
+          <button
+            key={s.plan.title}
+            className={`tab ${open?.plan.title === s.plan.title ? "active" : ""}`}
+            onClick={() => setOpen(open?.plan.title === s.plan.title ? null : s)}
+          >
+            📋 {s.plan.title}
+          </button>
+        ))}
+      </div>
+      {open && <div style={{ marginTop: 12 }}><SessionPlanView plan={open.plan} /></div>}
+    </div>
+  );
+}
 
 export function Dashboard({ go }: { go: (tab: string) => void }) {
   const { progress } = useGamify();
@@ -99,6 +130,8 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
           <button className="btn" onClick={() => go("team")}>Set Up My Team</button>
         </div>
       )}
+
+      <OfflinePlans />
 
       <div className="card" style={{ marginTop: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>

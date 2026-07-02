@@ -11,6 +11,7 @@ import { MatchDay } from "./pages/MatchDay";
 import { Team } from "./pages/Team";
 import { Club } from "./pages/Club";
 import { Community } from "./pages/Community";
+import { Privacy } from "./pages/Privacy";
 import type { Settings, User } from "./types";
 
 const NAV = [
@@ -126,6 +127,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <div className="user-box">
           <div className="uname">{user.name}</div>
           <div className="muted small">{user.club ? user.club.name : "Independent coach"}</div>
+          <button className="signout" onClick={() => setTab("privacy")} style={{ marginBottom: 4 }}>Privacy & player data</button>
           <button className="signout" onClick={onSignOut}>Sign out</button>
         </div>
       </nav>
@@ -147,6 +149,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "team" && <Team />}
         {tab === "club" && <Club user={user} />}
         {tab === "community" && <Community />}
+        {tab === "privacy" && <Privacy />}
       </main>
     </div>
   );

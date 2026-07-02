@@ -8,6 +8,7 @@ import { authRouter } from "./auth.js";
 import { clubRouter } from "./club.js";
 import { billingRouter, stripeConfigured, stripeWebhook } from "./billing.js";
 import { availableProviders, engineSummary, hasAnyProvider } from "./providers.js";
+import { emailConfigured, startDigestScheduler } from "./email.js";
 
 const app = express();
 app.use(cors());
@@ -37,6 +38,8 @@ app.listen(PORT, () => {
       `  providers: ${availableProviders().join(" -> ") || "none (DEMO mode)"}\n` +
       `  engines: free=${free.chat.label} (${free.chat.model}) / ${free.structured.label} (${free.structured.model}); pro=${pro.chat.label} (${pro.chat.model})\n` +
       `  billing: ${stripeConfigured ? "Stripe LIVE" : "not configured — dev plan toggle active"}\n` +
+      `  email: ${emailConfigured ? "Resend LIVE (weekly digest armed)" : "not configured"}\n` +
       `  mode: ${hasAnyProvider() ? "LIVE" : "DEMO"}`,
   );
+  startDigestScheduler();
 });

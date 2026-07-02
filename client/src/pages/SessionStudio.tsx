@@ -1,3 +1,4 @@
+import { savePlanOffline } from "../savedPlans";
 import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
@@ -45,6 +46,7 @@ export function SessionStudio() {
         school: form.school || undefined,
       });
       setPlan(res.plan);
+      savePlanOffline(res.plan);
       setEntryId(res.entryId);
       celebrate(res.award);
     } catch (e) {

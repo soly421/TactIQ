@@ -3,6 +3,7 @@
 // entry; unlocking it generates the full session live, adapted to the coach's
 // team, so every unlock is unique. Schools of thought remain as an optional
 // generation flavor (used by Session Studio).
+import { SIGNATURE_EXERCISES } from "./exercises.js";
 
 export interface School {
   id: string;
@@ -134,6 +135,8 @@ export interface SessionTemplate {
   theme: string;
   description: string;
   concept: string;
+  collection: "signature" | "blueprint";
+  tradition?: string;
 }
 
 function buildCatalog(): SessionTemplate[] {
@@ -157,6 +160,7 @@ function buildCatalog(): SessionTemplate[] {
           theme: t.name,
           description: `${c.blurb}. ${t.concept}`,
           concept: t.concept,
+          collection: "blueprint",
         });
       }
     }
@@ -164,7 +168,36 @@ function buildCatalog(): SessionTemplate[] {
   return out;
 }
 
-export const SESSION_TEMPLATES: SessionTemplate[] = buildCatalog();
+// The signature catalog: named exercises from the zone curriculum and academy
+// traditions worldwide, one library card per suitable age band.
+function buildSignatureCatalog(): SessionTemplate[] {
+  const out: SessionTemplate[] = [];
+  for (const e of SIGNATURE_EXERCISES) {
+    for (const band of e.ageBands) {
+      const bi = BAND_INDEX[band as AgeBand];
+      if (bi === undefined) continue;
+      out.push({
+        id: `${e.id}--${band.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+        topic: e.id,
+        topicName: e.name,
+        phase: e.phase as Phase,
+        emoji: e.emoji,
+        ageBand: band as AgeBand,
+        complexity: e.complexity as Complexity,
+        format: e.format === "any" ? BAND_FORMAT[band as AgeBand] : e.format,
+        title: `${e.name} (${band})`,
+        theme: e.name,
+        description: e.organization,
+        concept: `${e.organization} Coaching points: ${e.coachingPoints.join("; ")}.`,
+        collection: "signature",
+        tradition: e.tradition,
+      });
+    }
+  }
+  return out;
+}
+
+export const SESSION_TEMPLATES: SessionTemplate[] = [...buildSignatureCatalog(), ...buildCatalog()];
 
 export function getTemplate(id: string): SessionTemplate | undefined {
   return SESSION_TEMPLATES.find((t) => t.id === id);

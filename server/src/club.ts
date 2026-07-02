@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { addClubComment, addClubSession, clubCoaches, getClubComments, getClubSessions, getUserClub, setClubPhilosophy } from "./store.js";
+import { addClubComment, addClubSession, clubCoaches, clubReport, getClubBilling, getClubComments, getClubSessions, getUserClub, setClubPhilosophy } from "./store.js";
 import { levelFor } from "./gamification.js";
 
 // Club mode: what a Director of Coaching needs — coach oversight, club-wide
@@ -34,6 +34,24 @@ clubRouter.get("/overview", (req, res) => {
       xp: coaches.reduce((a, c) => a + c.xp, 0),
       activeToday: coaches.filter((c) => c.lastActiveDay === new Date().toISOString().slice(0, 10)).length,
     },
+  });
+});
+
+// The DOC monthly report: the artifact that justifies the club license —
+// per-coach activity over the last 30 days plus the license status.
+clubRouter.get("/report", (req, res) => {
+  const club = getUserClub(uid(req));
+  if (!club) {
+    res.status(404).json({ error: "Not in a club" });
+    return;
+  }
+  const report = clubReport(club.id, 30);
+  const billing = getClubBilling(club.id);
+  res.json({
+    clubName: club.name,
+    periodDays: 30,
+    license: { planTier: billing?.planTier ?? "free", seats: billing?.seats ?? 0 },
+    ...report,
   });
 });
 
