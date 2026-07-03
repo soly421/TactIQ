@@ -6,7 +6,7 @@
 // Coordinates: 100x100, y=0 is the OPPONENT goal (attacking up), own GK ~92.
 // ============================================================================
 
-export type Role = "GK" | "CB" | "FB" | "DM" | "CM" | "AM" | "W" | "ST";
+export type Role = "GK" | "CB" | "FB" | "DM" | "CM" | "AM" | "W" | "ST" | "OPP";
 
 export interface Piece {
   id: string;
@@ -336,7 +336,7 @@ export interface QuickRead {
 }
 
 const ROLE_WORDS: Record<Role, string> = {
-  GK: "keeper", CB: "center back", FB: "fullback", DM: "pivot", CM: "midfielder", AM: "attacking mid", W: "winger", ST: "striker",
+  GK: "keeper", CB: "center back", FB: "fullback", DM: "pivot", CM: "midfielder", AM: "attacking mid", W: "winger", ST: "striker", OPP: "opponent",
 };
 
 export function quickRead(piece: Piece, from: { x: number; y: number }, all: Piece[]): QuickRead {

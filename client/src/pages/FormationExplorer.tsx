@@ -12,6 +12,8 @@ import type { AwardResult } from "../types";
 // The Formation Encyclopedia + chess mode. Pick any shape, watch it morph
 // through nine game scenarios — then grab a player and move them: the local
 // pre-read lands instantly, and the AI engine's verdict follows in ~2s.
+// The coach can also drop red opposition markers straight onto the pitch;
+// every engine read is weighed against their exact positions.
 
 interface EngineVerdict {
   headline: string;
@@ -29,6 +31,19 @@ interface Read {
   error?: string;
 }
 
+// Opposition quick-set shapes: one tap lays out the picture the coach is
+// facing, then each marker is draggable to match reality. Grid: y=0 is the
+// opponent goal, so "their high press" hunts near OUR goal (high y).
+const OPP_PRESETS: { id: string; label: string; spots: [number, number][] }[] = [
+  { id: "press3", label: "⚡ High press ×3", spots: [[30, 68], [50, 76], [70, 68]] },
+  { id: "midblock4", label: "🧱 Mid block ×4", spots: [[26, 48], [42, 53], [58, 53], [74, 48]] },
+  { id: "backline3", label: "🛡 Back line ×3", spots: [[30, 20], [50, 15], [70, 20]] },
+];
+
+function oppPiece(n: number, x: number, y: number): Piece {
+  return { id: `opp-${n}`, role: "OPP", label: `O${n}`, x, y };
+}
+
 export function FormationExplorer() {
   const { celebrate } = useGamify();
   const ent = useEntitlements();
@@ -43,6 +58,7 @@ export function FormationExplorer() {
   const [compare, setCompare] = useState(false);
   const [depth, setDepth] = useState<"quick" | "standard" | "deep">("quick");
   const [opponent, setOpponent] = useState("");
+  const [oppPieces, setOppPieces] = useState<Piece[]>([]);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
 
@@ -75,6 +91,7 @@ export function FormationExplorer() {
   const meters = shapeMeters(pieces);
   const scenarioDef = SCENARIOS.find((s) => s.id === scenario)!;
   const extraNote = formation.notes?.[scenario];
+  const oppPayload = oppPieces.map(({ label, x, y }) => ({ label, x: Math.round(x), y: Math.round(y) }));
 
   function pickFormat(f: "7v7" | "9v9" | "11v11") {
     setFormat(f);
@@ -100,13 +117,54 @@ export function FormationExplorer() {
     void f; void s;
   }
 
+  // ---- Opposition layer: add / preset / drag / remove ----
+  function addOpp() {
+    setOppPieces((ops) => {
+      if (ops.length >= 11) return ops;
+      const n = ops.reduce((m, o) => Math.max(m, Number(o.id.split("-")[1]) || 0), 0) + 1;
+      // stagger spawns just above halfway so new markers never stack
+      const i = ops.length;
+      return [...ops, oppPiece(n, 38 + (i % 3) * 12, 58 + Math.floor(i / 3) * 9)];
+    });
+  }
+
+  function applyOppPreset(spots: [number, number][]) {
+    setOppPieces(spots.map(([x, y], i) => oppPiece(i + 1, x, y)));
+  }
+
+  function moveOpp(p: Piece) {
+    setOppPieces((ops) => ops.map((o) => (o.id === p.id ? { ...o, x: p.x, y: p.y } : o)));
+    setHistory((h) => [...h, `their ${p.label} shifted to [${Math.round(p.x)},${Math.round(p.y)}]`].slice(-8));
+  }
+
+  function removeOpp(id: string) {
+    setOppPieces((ops) => ops.filter((o) => o.id !== id));
+  }
+
+  // Instant local read of the new position against the opposition markers —
+  // lands before the engine verdict so placement feels alive immediately.
+  function oppQuickLines(piece: Piece): { gains: string[]; risks: string[] } {
+    if (!oppPieces.length) return { gains: [], risks: [] };
+    let nearest: Piece | null = null;
+    let best = Infinity;
+    for (const o of oppPieces) {
+      const d = Math.hypot(o.x - piece.x, o.y - piece.y);
+      if (d < best) { best = d; nearest = o; }
+    }
+    if (nearest && best < 10) return { gains: [], risks: [`Right into their ${nearest.label}'s zone — expect instant pressure`] };
+    if (best > 18) return { gains: [`Free space — no red shirt within ${Math.round(best)} on the grid`], risks: [] };
+    return { gains: [], risks: [] };
+  }
+
   // The chess move: local pre-read instantly, AI engine verdict async.
   async function onMove(piece: Piece, from: { x: number; y: number }) {
     setEdits((m) => new Map(m).set(piece.id, { x: piece.x, y: piece.y }));
     setHotPiece(piece.id);
     const dir = piece.y < from.y - 4 ? "up the pitch" : piece.y > from.y + 4 ? "deeper" : "across";
     const moveLabel = `${piece.label} → ${dir}`;
-    const quick = quickRead(piece, from, pieces);
+    const base = quickRead(piece, from, pieces);
+    const vsOpp = oppQuickLines(piece);
+    const quick = { gains: [...vsOpp.gains, ...base.gains].slice(0, 3), risks: [...vsOpp.risks, ...base.risks].slice(0, 3) };
     const readId = Date.now() + Math.random();
     setReads((r) => [{ id: readId, moveLabel, quick, verdict: null, thinking: true }, ...r].slice(0, 3));
 
@@ -122,6 +180,7 @@ export function FormationExplorer() {
         history,
         depth,
         opponent,
+        opponents: oppPayload,
       });
       setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, verdict: r.verdict, thinking: false } : rd)));
       celebrate(r.award);
@@ -148,6 +207,7 @@ export function FormationExplorer() {
         history,
         depth,
         opponent,
+        opponents: oppPayload,
       });
       setReads((rs) => rs.map((rd) => (rd.id === readId ? { ...rd, verdict: r.verdict, thinking: false } : rd)));
       celebrate(r.award);
@@ -202,7 +262,24 @@ export function FormationExplorer() {
 
       <div className="card" style={{ marginBottom: 12, padding: "10px 14px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="small" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>🆚 Opposition:</span>
+          <span className="small" style={{ fontWeight: 700, whiteSpace: "nowrap", color: "#e5484d" }}>🔴 Opposition on the pitch:</span>
+          <button className="btn ghost" style={{ fontSize: 12, padding: "6px 12px" }} onClick={addOpp} disabled={oppPieces.length >= 11}>
+            + Add opponent
+          </button>
+          {OPP_PRESETS.map((p) => (
+            <button key={p.id} className="btn ghost" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => applyOppPreset(p.spots)}>
+              {p.label}
+            </button>
+          ))}
+          {oppPieces.length > 0 && (
+            <>
+              <span className="pill" style={{ fontSize: 11.5 }}>{oppPieces.length} placed</span>
+              <button className="btn ghost" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => setOppPieces([])}>✕ Clear</button>
+            </>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+          <span className="small" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>🆚 Their game plan:</span>
           <input
             style={{ flex: 1, minWidth: 200 }}
             value={opponent}
@@ -222,7 +299,9 @@ export function FormationExplorer() {
           </button>
         </div>
         <p className="muted small" style={{ margin: "6px 0 0" }}>
-          The opposition context shapes <b>every</b> engine read — moves and questions both answer against it.
+          {oppPieces.length > 0
+            ? <>Drag the red markers to where they actually play — <b>double-tap one to remove it</b>. Every move and question is now read against their exact positions.</>
+            : <>Drop opposition markers on the pitch (or describe their plan in words) — the engine weighs <b>every</b> read against them.</>}
         </p>
       </div>
 
@@ -233,7 +312,7 @@ export function FormationExplorer() {
               <div className="small" style={{ fontWeight: 700, marginBottom: 6 }}>
                 {SCENARIOS.find((x) => x.id === s)!.emoji} {SCENARIOS.find((x) => x.id === s)!.name}
               </div>
-              <TacticsBoard pieces={applyScenario(formation, s)} />
+              <TacticsBoard pieces={applyScenario(formation, s)} opponents={oppPieces} />
             </div>
           ))}
         </div>
@@ -241,7 +320,7 @@ export function FormationExplorer() {
         <div className="explorer-grid">
           <div>
             <div className="card" style={{ padding: 10 }}>
-              <TacticsBoard pieces={pieces} ghosts={ghosts} onMove={onMove} highlight={hotPiece} />
+              <TacticsBoard pieces={pieces} ghosts={ghosts} onMove={onMove} opponents={oppPieces} onMoveOpp={moveOpp} onRemoveOpp={removeOpp} highlight={hotPiece} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 }}>
                 <div className="meters">
                   <Meter label="Compact" value={meters.compact} color="var(--turquoise)" />

@@ -909,7 +909,7 @@ api.post("/board/move", async (req, res) => {
     );
     return;
   }
-  const { format, formation, scenario, board, move, history, depth, opponent, question } = req.body ?? {};
+  const { format, formation, scenario, board, move, history, depth, opponent, opponents, question } = req.body ?? {};
   if (!formation || !Array.isArray(board) || (!move && !question)) {
     res.status(400).json({ error: "formation, board, and a move or question are required" });
     return;
@@ -926,6 +926,12 @@ api.post("/board/move", async (req, res) => {
     const boardTxt = (board as { label: string; role: string; x: number; y: number }[])
       .map((p) => `${p.label} (${p.role}) at [${Math.round(p.x)},${Math.round(p.y)}]`)
       .join("; ");
+    // Opposition markers the coach placed on the board — same grid as the
+    // coach's own players, so the engine can read the matchups spatially.
+    const oppTxt = (Array.isArray(opponents) ? (opponents as { label: string; x: number; y: number }[]) : [])
+      .slice(0, 15)
+      .map((o) => `${String(o.label ?? "O?").slice(0, 8)} at [${Math.round(Number(o.x) || 0)},${Math.round(Number(o.y) || 0)}]`)
+      .join("; ");
     const verdict = await generateStructured<{ headline: string; gains: string[]; risks: string[]; counterMove: string }>({
       tier: depthTier,
       userId,
@@ -934,6 +940,7 @@ api.post("/board/move", async (req, res) => {
 You are TactIQ's BOARD ENGINE — the chess engine for soccer shapes. The coach is moving players on a tactics board and you evaluate each move in real time. Coordinates are a 100x100 grid: y=0 is the OPPONENT goal (up = attacking), y=100 their own goal, x=0 left touchline. Be concrete about ZONES and NUMBERS ("their winger now gets the left channel 1v1", "you have a 3v2 in build-up"). Each item under 15 words. If the coach's roster is in team memory, reference actual player names where natural. Youth-appropriate, age-aware.`,
       user: `Format: ${format}. Formation: ${formation}. Scenario: ${scenario}.
 ${opponent ? `OPPOSITION CONTEXT (weigh every read against this): ${String(opponent).slice(0, 300)}` : ""}
+${oppTxt ? `OPPOSITION ON THE BOARD (their players, same 100x100 grid — read every matchup spatially: name who marks whom, where the free man is, where the overloads are): ${oppTxt}` : ""}
 Current board: ${boardTxt}
 ${move ? `The coach just moved: ${move}` : ""}
 ${Array.isArray(history) && history.length ? `Earlier moves this session: ${history.slice(-4).join("; ")}` : ""}
