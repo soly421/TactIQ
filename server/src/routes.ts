@@ -10,6 +10,7 @@ import {
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
 import { setCoachProfile, getCoachProfile, getSeasonEntryById, refundMessage, topAdvisorNames, setUserTz, userToday,
+  adminOverview, estCostToday, getUserBilling, markClubInterest,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
   activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
@@ -40,10 +41,6 @@ api.get("/health", (_req, res) => {
   res.json({ ok: true, live: hasAnyProvider() });
 });
 
-// ---- Try-before-signup: one instant session, no account, cheapest tier ----
-// The Speak/Cursor lesson: deliver the magic moment BEFORE asking for signup.
-const tryCounts = new Map<string, { day: string; n: number }>();
-
 // Everything below requires a signed-in coach.
 api.use(requireAuth);
 
@@ -59,19 +56,36 @@ function dailyLimit(userId: number): number {
   return planOf(userId) === "pro" ? PRO_DAILY_MESSAGES : FREE_DAILY_MESSAGES;
 }
 
+// ---- daily compute ceiling: caps DOLLARS, not requests ----
+// The request caps below bound abuse in units; this bounds it in money.
+// Estimated from the model_calls ledger at list rates (see estimateCost).
+// A legit coach spends $0.10-0.50/day, so these never touch real usage —
+// they exist so a scripted account can't turn a $29.99 plan into a $2k bill.
+const COST_CEILING_USD: Record<Plan, number> = {
+  free: Number(process.env.COST_CEILING_FREE || 1),
+  pro: Number(process.env.COST_CEILING_PRO || 5),
+};
+
+function overComputeCeiling(userId: number): boolean {
+  return estCostToday(userId) >= COST_CEILING_USD[planOf(userId)];
+}
+
+const CEILING_MSG = "You've hit today's fair-use compute ceiling — that was a heavy day, coach! Everything resets tomorrow.";
+
 function consumeMessage(userId: number): { ok: boolean; remaining: number } {
   const limit = dailyLimit(userId);
   const used = getUsage(userId);
-  if (used >= limit) return { ok: false, remaining: 0 };
+  if (used >= limit || overComputeCeiling(userId)) return { ok: false, remaining: Math.max(0, limit - used) };
   incrementUsage(userId);
   return { ok: true, remaining: limit - used - 1 };
 }
 
 // Structured generations (sessions, formations, game plans) are the priciest
 // calls. Legit coaches never hit these ceilings; scripted abuse does.
-const STRUCTURED_PER_DAY: Record<Plan, number> = { free: 10, pro: 150 };
+const STRUCTURED_PER_DAY: Record<Plan, number> = { free: 3, pro: 150 };
 
 function consumeStructured(userId: number): boolean {
+  if (overComputeCeiling(userId)) return false;
   const day = userToday(userId);
   const key = `structcap:${userId}:${day}`;
   const used = Number(kvGet(key) ?? 0);
@@ -87,9 +101,15 @@ function refundStructured(userId: number): void {
   kvSet(key, String(Math.max(0, Number(kvGet(key) ?? 0) - 1)));
 }
 
-const STRUCTURED_LIMIT_MSG = "Daily build limit reached — that's a lot of sessions, coach! It resets tomorrow.";
+function structuredLimitMsg(userId: number): string {
+  if (overComputeCeiling(userId)) return CEILING_MSG;
+  return planOf(userId) === "free"
+    ? "Daily build limit reached (3 on Free). Upgrade to Pro for 150 builds a day on the flagship engine."
+    : "Daily build limit reached — that's a lot of sessions, coach! It resets tomorrow.";
+}
 
 function quotaError(userId: number): string {
+  if (overComputeCeiling(userId)) return CEILING_MSG;
   return `Daily message limit reached (${dailyLimit(userId)}). ${planOf(userId) === "free" ? "Upgrade to Pro for 10x messages and the flagship engine." : "Resets tomorrow."}`;
 }
 
@@ -245,7 +265,7 @@ api.post("/session-plan", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   try {
@@ -291,7 +311,7 @@ api.post("/session-scan", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   try {
@@ -324,7 +344,7 @@ api.post("/season-plan", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   const { weeks, focus, gamesPerWeek, practicesPerWeek } = req.body ?? {};
@@ -385,7 +405,7 @@ api.post("/library/:id/generate", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   try {
@@ -438,7 +458,7 @@ api.post("/formation", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   try {
@@ -528,7 +548,7 @@ api.post("/matchday/pregame", async (req, res) => {
     return;
   }
   if (!consumeStructured(userId)) {
-    res.status(429).json({ error: STRUCTURED_LIMIT_MSG });
+    res.status(429).json({ error: structuredLimitMsg(userId) });
     return;
   }
   try {
@@ -1022,7 +1042,7 @@ api.post("/staff-debate", async (req, res) => {
   }
   // a debate is three voices — it costs three messages
   const limit = dailyLimit(userId);
-  if (getUsage(userId) + 3 > limit) {
+  if (getUsage(userId) + 3 > limit || overComputeCeiling(userId)) {
     res.status(429).json({ error: quotaError(userId) });
     return;
   }
@@ -1304,6 +1324,8 @@ Ground everything in the team memory above. No preamble, no sign-off.`,
 // ---- Onboarding: who is this coach? Collected once, used everywhere ----
 const COACH_ROLES = ["head", "assistant", "parent", "director", "trainer"];
 const REFERRALS = ["coach", "club", "social", "search", "event", "other"];
+const CLUB_SIZES = ["1-5", "6-15", "16-40", "40+"];
+const CHALLENGES = ["sessions", "tactics", "development", "parents"];
 
 api.get("/onboarding", (req, res) => {
   const userId = uid(req);
@@ -1316,16 +1338,39 @@ api.get("/onboarding", (req, res) => {
 
 api.post("/onboarding", (req, res) => {
   const userId = uid(req);
-  const { coachRole, referral, zip, skipped } = req.body ?? {};
+  const { coachRole, referral, zip, clubName, clubSize, challenge, clubInterest, skipped } = req.body ?? {};
   if (!skipped) {
     setCoachProfile(userId, {
       coachRole: COACH_ROLES.includes(String(coachRole)) ? String(coachRole) : "",
       referral: REFERRALS.includes(String(referral)) ? String(referral) : "",
       zip: String(zip ?? ""),
+      clubName: String(clubName ?? ""),
+      clubSize: CLUB_SIZES.includes(String(clubSize)) ? String(clubSize) : "",
+      challenge: CHALLENGES.includes(String(challenge)) ? String(challenge) : "",
+      clubInterest: Boolean(clubInterest),
     });
   }
   kvSet(`onboard:${userId}`, "done");
   res.json({ ok: true });
+});
+
+// A director raising a hand mid-wizard is the hottest lead the funnel can
+// produce — recorded even if they later skip the rest of onboarding.
+api.post("/onboarding/club-interest", (req, res) => {
+  markClubInterest(uid(req));
+  res.json({ ok: true });
+});
+
+// ---- Founder admin: spend, acquisition, club-sales leads ----
+// Gated by ADMIN_EMAILS (comma-separated). Unset = nobody, including in dev.
+api.get("/admin/overview", (req, res) => {
+  const admins = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const email = getUserBilling(uid(req))?.email?.toLowerCase();
+  if (!email || !admins.includes(email)) {
+    res.status(403).json({ error: "Not authorized" });
+    return;
+  }
+  res.json(adminOverview());
 });
 
 // ---- Gamified progress ----

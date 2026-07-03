@@ -3,8 +3,9 @@ import { sendJSON } from "../api";
 import { formatForAge } from "../age";
 
 // First-login onboarding: two short steps that earn their keep.
-// Step 1 tells us who the coach is (role tunes every AI answer's tone,
-// referral tells us how they found us, ZIP maps club density).
+// Step 1 tells us who the coach is (role + biggest challenge tune every AI
+// answer, referral tells us how they found us, club name + ZIP map territory,
+// and a director gets the club-licensing hand-raise right in the flow).
 // Step 2 creates the team — the thing that powers the whole product.
 // Skippable, because a form should never beat a signup.
 
@@ -25,6 +26,15 @@ const REFERRALS = [
   { id: "other", label: "Other" },
 ];
 
+const CLUB_SIZES = ["1-5", "6-15", "16-40", "40+"];
+
+const CHALLENGES = [
+  { id: "sessions", label: "🧭 Planning good sessions" },
+  { id: "tactics", label: "♟️ In-game tactics" },
+  { id: "development", label: "📈 Player development" },
+  { id: "parents", label: "🗣️ Parents & playing time" },
+];
+
 const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17+", "HS"];
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
@@ -32,6 +42,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [coachRole, setCoachRole] = useState("");
   const [referral, setReferral] = useState("");
   const [zip, setZip] = useState("");
+  const [clubName, setClubName] = useState("");
+  const [clubSize, setClubSize] = useState("");
+  const [challenge, setChallenge] = useState("");
+  const [ctaSent, setCtaSent] = useState(false);
   const [experience, setExperience] = useState("intermediate");
   const [teamName, setTeamName] = useState("");
   const [ageGroup, setAgeGroup] = useState("U10");
@@ -46,6 +60,13 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     onDone();
   }
 
+  // The director hand-raise is recorded immediately — it must survive a
+  // skipped or abandoned wizard, because it's the hottest lead we can get.
+  async function raiseHand() {
+    setCtaSent(true);
+    await sendJSON("/api/onboarding/club-interest", {}).catch(() => {});
+  }
+
   async function finish() {
     if (!teamName.trim()) {
       setError("Give your team a name — it's how all your work gets organized.");
@@ -54,7 +75,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError("");
     try {
-      await sendJSON("/api/onboarding", { coachRole, referral, zip });
+      await sendJSON("/api/onboarding", { coachRole, referral, zip, clubName, clubSize, challenge, clubInterest: ctaSent });
       await sendJSON("/api/team", {
         teamName: teamName.trim(),
         ageGroup,
@@ -97,6 +118,31 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               </button>
             ))}
           </div>
+          {coachRole === "director" && (
+            <div className="card" style={{ marginBottom: 14, borderColor: "var(--gold, #c9a227)" }}>
+              <b className="small">How many teams does your club run?</b>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 10px" }}>
+                {CLUB_SIZES.map((s) => (
+                  <button key={s} className={`tab ${clubSize === s ? "active" : ""}`} onClick={() => setClubSize(s)}>{s} teams</button>
+                ))}
+              </div>
+              <p className="muted small" style={{ margin: "0 0 8px" }}>
+                Clubs license TactIQ at <b>$14.99/coach/mo</b> (10+ seats) — every coach gets the flagship engine, and you get the
+                DOC dashboard, club-wide philosophy, and one invoice.
+              </p>
+              {ctaSent ? (
+                <p className="small" style={{ color: "var(--green)", fontWeight: 600, margin: 0 }}>✓ Got it — we'll reach out at your signup email to set up a walkthrough.</p>
+              ) : (
+                <button className="btn" style={{ fontSize: 13 }} onClick={() => void raiseHand()}>🏛️ Talk to us about licensing your club</button>
+              )}
+            </div>
+          )}
+          <b className="small">What's hardest for you right now?</b>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
+            {CHALLENGES.map((c) => (
+              <button key={c.id} className={`tab ${challenge === c.id ? "active" : ""}`} onClick={() => setChallenge(c.id)}>{c.label}</button>
+            ))}
+          </div>
           <b className="small">Coaching experience</b>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
             {[["new", "🌱 My first seasons"], ["intermediate", "📋 A few years in"], ["experienced", "🎓 Experienced / licensed"]].map(([id, label]) => (
@@ -104,14 +150,18 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             ))}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <label className="field" style={{ flex: 1, minWidth: 200 }}>
+            <label className="field" style={{ flex: 1, minWidth: 180 }}>
+              Your club or organization <span className="muted">(optional)</span>
+              <input value={clubName} maxLength={80} placeholder="e.g. Arlington Soccer Assoc." onChange={(e) => setClubName(e.target.value)} />
+            </label>
+            <label className="field" style={{ flex: 1, minWidth: 180 }}>
               How did you hear about TactIQ?
               <select value={referral} onChange={(e) => setReferral(e.target.value)}>
                 <option value="">Choose…</option>
                 {REFERRALS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
               </select>
             </label>
-            <label className="field" style={{ width: 140 }}>
+            <label className="field" style={{ width: 120 }}>
               ZIP <span className="muted">(optional)</span>
               <input value={zip} maxLength={5} placeholder="19003" onChange={(e) => setZip(e.target.value.replace(/[^0-9]/g, ""))} />
             </label>

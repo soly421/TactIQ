@@ -188,22 +188,40 @@ export interface CoachProfile {
   coachRole: string;
   referral: string;
   zip: string;
+  clubName: string; // free-text club affiliation — territory intel, independent of in-app club membership
+  clubSize: string; // teams in their club (directors) — lead scoring
+  challenge: string; // their biggest coaching pain — steers AI emphasis + messaging segment
+  clubInterest: boolean; // director tapped "talk to us about club licensing"
 }
 
 export function setCoachProfile(userId: number, p: Partial<CoachProfile>): void {
-  db.prepare("UPDATE users SET coach_role = ?, referral = ?, zip = ? WHERE id = ?").run(
+  db.prepare(
+    "UPDATE users SET coach_role = ?, referral = ?, zip = ?, club_name = ?, club_size = ?, challenge = ?, club_interest = ? WHERE id = ?",
+  ).run(
     String(p.coachRole ?? "").slice(0, 30),
     String(p.referral ?? "").slice(0, 40),
     String(p.zip ?? "").replace(/[^0-9]/g, "").slice(0, 5),
+    String(p.clubName ?? "").slice(0, 80),
+    String(p.clubSize ?? "").slice(0, 10),
+    String(p.challenge ?? "").slice(0, 20),
+    p.clubInterest ? 1 : 0,
     userId,
   );
 }
 
+export function markClubInterest(userId: number): void {
+  db.prepare("UPDATE users SET club_interest = 1 WHERE id = ?").run(userId);
+}
+
 export function getCoachProfile(userId: number): CoachProfile {
-  const r = db.prepare("SELECT coach_role, referral, zip FROM users WHERE id = ?").get(userId) as
-    | { coach_role: string | null; referral: string | null; zip: string | null }
+  const r = db.prepare("SELECT coach_role, referral, zip, club_name, club_size, challenge, club_interest FROM users WHERE id = ?").get(userId) as
+    | { coach_role: string | null; referral: string | null; zip: string | null; club_name: string | null; club_size: string | null; challenge: string | null; club_interest: number | null }
     | undefined;
-  return { coachRole: r?.coach_role ?? "", referral: r?.referral ?? "", zip: r?.zip ?? "" };
+  return {
+    coachRole: r?.coach_role ?? "", referral: r?.referral ?? "", zip: r?.zip ?? "",
+    clubName: r?.club_name ?? "", clubSize: r?.club_size ?? "", challenge: r?.challenge ?? "",
+    clubInterest: Boolean(r?.club_interest),
+  };
 }
 
 // ---- progress ----
@@ -638,6 +656,107 @@ export function tokensToday(userId: number): { input: number; output: number; ca
     .prepare("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) n FROM model_calls WHERE user_id = ? AND t >= date('now')")
     .get(userId) as { i: number; o: number; n: number };
   return { input: row.i, output: row.o, calls: row.n };
+}
+
+// ---- compute cost estimation ----
+// List $/1M-token rates per model. Cached-input discounts are deliberately
+// ignored, so estimates run slightly HIGH — the right direction for a
+// spending ceiling. Prefix-matched so dated model ids still resolve.
+const MODEL_RATES: [string, { in: number; out: number }][] = [
+  ["claude-haiku-4-5", { in: 1, out: 5 }],
+  ["claude-sonnet-5", { in: 3, out: 15 }],
+  ["claude-fable-5", { in: 10, out: 50 }],
+  ["claude-opus", { in: 5, out: 25 }],
+  ["gpt-5-mini", { in: 0.25, out: 2 }],
+  ["gpt-5.1", { in: 1.25, out: 10 }],
+];
+
+export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+  const rate = MODEL_RATES.find(([prefix]) => model.startsWith(prefix))?.[1] ?? { in: 3, out: 15 };
+  return (inputTokens * rate.in + outputTokens * rate.out) / 1_000_000;
+}
+
+function estCostWhere(where: string, ...params: unknown[]): number {
+  const rows = db
+    .prepare(`SELECT model, SUM(input_tokens) i, SUM(output_tokens) o FROM model_calls WHERE ${where} GROUP BY model`)
+    .all(...params) as { model: string; i: number; o: number }[];
+  return rows.reduce((sum, r) => sum + estimateCost(r.model, r.i, r.o), 0);
+}
+
+// Estimated $ this user has spent on model calls today (UTC day — a ceiling
+// backstop, not a billing statement, so the boundary doesn't need to be local).
+export function estCostToday(userId: number): number {
+  return estCostWhere("user_id = ? AND t >= date('now')", userId);
+}
+
+// ---- founder admin overview: spend + acquisition + club-sales leads ----
+export interface AdminOverview {
+  totals: { users: number; pro: number; clubs: number; teams: number; signups7d: number };
+  spend: {
+    todayUsd: number;
+    monthUsd: number;
+    topUsers: { name: string; email: string; plan: string; calls: number; inputTokens: number; outputTokens: number; estUsd: number }[];
+  };
+  acquisition: { byReferral: Record<string, number>; byRole: Record<string, number> };
+  leads: { name: string; email: string; clubName: string; clubSize: string; zip: string; clubInterest: boolean; createdAt: string }[];
+  density: { clubs: { name: string; coaches: number }[]; zips: { zip: string; coaches: number }[] };
+}
+
+export function adminOverview(): AdminOverview {
+  const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+  const group = (col: string) =>
+    Object.fromEntries(
+      (db.prepare(`SELECT ${col} k, COUNT(*) n FROM users WHERE ${col} != '' GROUP BY ${col} ORDER BY n DESC`).all() as { k: string; n: number }[])
+        .map((r) => [r.k, r.n]),
+    );
+  // Per-user, per-model sums this month -> priced in JS, top spenders first.
+  const spendRows = db
+    .prepare(
+      `SELECT m.user_id uid, m.model, SUM(m.input_tokens) i, SUM(m.output_tokens) o, COUNT(*) c, u.name, u.email, u.plan
+       FROM model_calls m JOIN users u ON u.id = m.user_id
+       WHERE m.t >= date('now','start of month') GROUP BY m.user_id, m.model`,
+    )
+    .all() as { uid: number; model: string; i: number; o: number; c: number; name: string; email: string; plan: string }[];
+  const byUser = new Map<number, AdminOverview["spend"]["topUsers"][number]>();
+  for (const r of spendRows) {
+    const u = byUser.get(r.uid) ?? { name: r.name, email: r.email, plan: r.plan, calls: 0, inputTokens: 0, outputTokens: 0, estUsd: 0 };
+    u.calls += r.c;
+    u.inputTokens += r.i;
+    u.outputTokens += r.o;
+    u.estUsd += estimateCost(r.model, r.i, r.o);
+    byUser.set(r.uid, u);
+  }
+  const topUsers = [...byUser.values()].sort((a, b) => b.estUsd - a.estUsd).slice(0, 15);
+  return {
+    totals: {
+      users: n("SELECT COUNT(*) n FROM users"),
+      pro: n("SELECT COUNT(*) n FROM users WHERE plan = 'pro'"),
+      clubs: n("SELECT COUNT(*) n FROM clubs"),
+      teams: n("SELECT COUNT(*) n FROM teams"),
+      signups7d: n("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now','-7 days')"),
+    },
+    spend: {
+      todayUsd: estCostWhere("t >= date('now')"),
+      monthUsd: estCostWhere("t >= date('now','start of month')"),
+      topUsers,
+    },
+    acquisition: { byReferral: group("referral"), byRole: group("coach_role") },
+    leads: (db
+      .prepare(
+        `SELECT name, email, club_name, club_size, zip, club_interest, created_at FROM users
+         WHERE coach_role = 'director' OR club_interest = 1 ORDER BY club_interest DESC, created_at DESC LIMIT 50`,
+      )
+      .all() as { name: string; email: string; club_name: string; club_size: string; zip: string; club_interest: number; created_at: string }[])
+      .map((r) => ({ name: r.name, email: r.email, clubName: r.club_name, clubSize: r.club_size, zip: r.zip, clubInterest: Boolean(r.club_interest), createdAt: r.created_at })),
+    density: {
+      clubs: (db
+        .prepare("SELECT club_name name, COUNT(*) coaches FROM users WHERE club_name != '' GROUP BY LOWER(club_name) HAVING coaches >= 2 ORDER BY coaches DESC LIMIT 20")
+        .all() as { name: string; coaches: number }[]),
+      zips: (db
+        .prepare("SELECT zip, COUNT(*) coaches FROM users WHERE zip != '' GROUP BY zip HAVING coaches >= 2 ORDER BY coaches DESC LIMIT 20")
+        .all() as { zip: string; coaches: number }[]),
+    },
+  };
 }
 
 // ---- feedback (output ratings -> eval dataset) ----

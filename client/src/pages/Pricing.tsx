@@ -9,6 +9,7 @@ import { useEntitlements } from "../entitlements";
 const MATRIX: { feature: string; free: string; pro: string; club: string }[] = [
   { feature: "AI engine", free: "Light / Standard Tactical", pro: "🧠 Deep Tactical (flagship)", club: "🧠 Deep Tactical" },
   { feature: "Messages per day", free: "30", pro: "300", club: "300 / coach" },
+  { feature: "Builds per day (sessions, game plans, formations)", free: "3", pro: "150", club: "150 / coach" },
   { feature: "Coaching advisors", free: "Your staff of 3", pro: "All 16 + build your own", club: "All 16 + custom" },
   { feature: "Session Library", free: "5 unlocks / month", pro: "Unlimited", club: "Unlimited" },
   { feature: "Session Studio + animated diagrams", free: "✓", pro: "✓", club: "✓" },

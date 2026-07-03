@@ -59,5 +59,11 @@ services:
         sync: false # e.g. "TactIQ <coach@updates.yourdomain.com>"
       - key: PUBLIC_URL
         sync: false # your public https URL, used for Stripe redirect links
+      - key: ADMIN_EMAILS
+        sync: false # comma-separated account emails allowed into the founder dashboard (spend/acquisition/club leads)
+      - key: COST_CEILING_FREE
+        sync: false # optional: est. $/day of compute per free coach before a friendly cooldown (default 1)
+      - key: COST_CEILING_PRO
+        sync: false # optional: est. $/day of compute per pro coach before a friendly cooldown (default 5)
       - key: PORT
         value: "8787"

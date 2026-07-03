@@ -204,6 +204,10 @@ try { db.exec("ALTER TABLE users ADD COLUMN active_team_id INTEGER"); } catch { 
 try { db.exec("ALTER TABLE users ADD COLUMN coach_role TEXT DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN referral TEXT DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN zip TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN club_name TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN club_size TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN challenge TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN club_interest INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE progress ADD COLUMN league INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE season_entries ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE schedule_events ADD COLUMN team_id INTEGER"); } catch { /* exists */ }

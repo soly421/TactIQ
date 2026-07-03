@@ -14,6 +14,7 @@ import { Community } from "./pages/Community";
 import { TacticsPage } from "./pages/TacticsPage";
 import { Privacy } from "./pages/Privacy";
 import { Pricing } from "./pages/Pricing";
+import { Admin } from "./pages/Admin";
 import type { Settings, User } from "./types";
 
 const NAV = [
@@ -116,9 +117,12 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   // First login: the two-step onboarding runs before the app — who the coach
   // is, then their team. Skippable; never shown again once answered.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
+    // Founder dashboard link: only appears for accounts in ADMIN_EMAILS.
+    void getJSON("/api/admin/overview").then(() => setIsAdmin(true)).catch(() => {});
     // Scope the offline session stash to this coach, and report the browser's
     // UTC offset so streaks/quests/caps reset on the coach's day, not UTC's.
     setPlansScope(user.id);
@@ -144,6 +148,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <div className="user-box">
           <div className="uname">{user.name}</div>
           <div className="muted small">{user.club ? user.club.name : "Independent coach"}</div>
+          {isAdmin && <button className="signout" onClick={() => setTab("admin")} style={{ marginBottom: 4 }}>📊 Founder dashboard</button>}
           <button className="signout" onClick={() => setTab("privacy")} style={{ marginBottom: 4 }}>Privacy & player data</button>
           <button className="signout" onClick={onSignOut}>Sign out</button>
         </div>
@@ -170,6 +175,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "community" && <Community user={user} />}
         {tab === "privacy" && <Privacy />}
         {tab === "pricing" && <Pricing go={setTab} />}
+        {tab === "admin" && <Admin />}
         </>
         )}
       </main>

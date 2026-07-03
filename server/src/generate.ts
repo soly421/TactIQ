@@ -68,8 +68,15 @@ This coach's team (use it — make every answer specific to THIS team):
 - Team: ${s.teamName} (${s.ageGroup}, ${s.format}, ${s.level} level)
 - Coach experience level: ${s.coachExperience || "intermediate"} (adapt your language per <coach_experience_adaptation>)${(() => {
     const roleWords: Record<string, string> = { head: "the head coach", assistant: "an assistant coach", parent: "a volunteer parent-coach — keep setups simple and jargon-free", director: "the club's director of coaching — comfortable with program-level thinking", trainer: "a private trainer" };
-    const r = getCoachProfile(userId).coachRole;
-    return roleWords[r] ? `\n- Who you're talking to: ${roleWords[r]}` : "";
+    const challengeWords: Record<string, string> = {
+      sessions: "planning quality training sessions — when advice touches training, make it concrete and progressive without being asked",
+      tactics: "in-game tactical decisions — lean into formations, adjustments, and matchup thinking",
+      development: "individual player development — tie advice back to developing specific players wherever the roster allows",
+      parents: "managing parents and playing-time expectations — offer communication framing alongside the soccer answer when relevant",
+    };
+    const prof = getCoachProfile(userId);
+    return (roleWords[prof.coachRole] ? `\n- Who you're talking to: ${roleWords[prof.coachRole]}` : "")
+      + (challengeWords[prof.challenge] ? `\n- Their biggest struggle right now: ${challengeWords[prof.challenge]}` : "");
   })()}
 - Preferred style: ${s.preferredStyle || "not specified"}
 - Roster notes: ${s.rosterNotes || "none"}
