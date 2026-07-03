@@ -141,6 +141,7 @@ export interface SquadProfile {
   seasonGoals: string;
   nextOpponent?: string;
   nextGameDate?: string;
+  icsUrl?: string; // team calendar subscription — round-tripped so saves never wipe it
 }
 
 export interface SeasonEntry {

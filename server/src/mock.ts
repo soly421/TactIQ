@@ -347,10 +347,11 @@ export const MOCK_FORMATION_11 = {
 };
 
 // The demo formation must match the requested format — a U9 coach asking for
-// 7v7 gets a 7-player shape, never a 9v9 sample.
+// 7v7 gets a 7-player shape, never a 9v9 sample. HS plays 11v11.
 export function mockFormation(format?: string): typeof MOCK_FORMATION {
-  if (String(format) === "7v7") return MOCK_FORMATION_7 as typeof MOCK_FORMATION;
-  if (String(format) === "11v11") return MOCK_FORMATION_11 as typeof MOCK_FORMATION;
+  const f = String(format);
+  if (f === "7v7") return MOCK_FORMATION_7 as typeof MOCK_FORMATION;
+  if (f === "11v11" || /hs|11/i.test(f)) return MOCK_FORMATION_11 as typeof MOCK_FORMATION;
   return MOCK_FORMATION;
 }
 
@@ -363,9 +364,9 @@ export const MOCK_GUIDANCE =
 export const MOCK_GAME_PLAN = {
   matchTitle: "vs Demo United — League Match",
   keysToTheGame: [
+    "Demo sample — these keys are generic, NOT real scouting of your opponent",
     "Win the midfield duel: find their playmaker and deny him the turn",
-    "Beat their high line with early balls behind",
-    "Own restarts — they concede from corners",
+    "Own restarts — corners and free kicks decide tight youth games",
   ],
   inPossession: ["Build 2+1 with the keeper", "Wingers stay high and wide to stretch their back three", "Look for the striker's runs behind on the first touch forward"],
   outOfPossession: ["Mid-block, press on their back-pass trigger", "Deny the switch: press the ball-side, screen the far side", "Recover central first, then out"],
@@ -399,6 +400,24 @@ export const MOCK_SEASON_PLAN = {
   principles: ["Development over results all season", "Every player plays every position", "Success = brave attempts"],
   checkpoints: ["Week 2: scanning before receiving appears in games", "Week 3: players ask to play out short on goal kicks", "Week 4: support triangles form without prompting"],
 };
+
+// Demo season plan sized to the request: the 4 sample weeks cycle out to the
+// requested length with week numbers renumbered, so a 12-week ask never
+// comes back as a 4-week plan.
+export function mockSeasonPlan(weeks?: number, ageGroup?: string): typeof MOCK_SEASON_PLAN {
+  const n = Math.min(16, Math.max(2, Number(weeks) || 12));
+  const base = MOCK_SEASON_PLAN.weeks;
+  const outWeeks = Array.from({ length: n }, (_, i) => ({
+    ...base[i % base.length],
+    week: i + 1,
+  }));
+  return {
+    ...MOCK_SEASON_PLAN,
+    title: `Season: Brave On The Ball (${n}-week demo sample)`,
+    ageGroup: ageGroup || MOCK_SEASON_PLAN.ageGroup,
+    weeks: outWeeks,
+  };
+}
 
 export const MOCK_FILM =
   "[Demo mode — set ANTHROPIC_API_KEY for live film analysis of YOUR clip]\n\nBelow is a SAMPLE of the format — the timestamps and observations are illustrative, not from your upload.\n\n## What I See (sample)\n- **0:02** — Back line flat and 25 yards from midfield: two units, no connection.\n- **0:08** — Ball-side pressure arrives but the far winger is ball-watching, leaving the switch open.\n- **0:14** — After the turnover, three players chase the same ball — no rest-defense triangle.\n\n## The Problem\nNamed in one sentence, from your actual footage.\n\n## Fix It\nOne coaching picture your players can hold.\n\n## Train It\n2-3 exercises from the Library, adapted to your age group.";

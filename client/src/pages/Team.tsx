@@ -210,7 +210,13 @@ export function Team() {
   async function save() {
     setError("");
     try {
-      const res = await sendJSON<{ squad: SquadProfile; award: AwardResult }>("/api/team", squad, "PUT");
+      // The calendar link is owned by the Schedule card, which saves it the
+      // moment it's imported. The profile form NEVER sends icsUrl — sending a
+      // stale copy from this form's mount-time state would wipe an import
+      // made after the page loaded. The server keeps the stored value when
+      // the field is absent.
+      const { icsUrl: _ics, ...profile } = squad;
+      const res = await sendJSON<{ squad: SquadProfile; award: AwardResult }>("/api/team", profile, "PUT");
       setSquad({ ...EMPTY, ...res.squad });
       setSaved(true);
       celebrate(res.award);
@@ -349,6 +355,56 @@ export function Team() {
           the next integration milestone — the data pipeline is already built to receive them.
         </p>
       </div>
+
+      <DangerZone />
+    </div>
+  );
+}
+
+// The privacy promise on the sign-up page and Privacy tab: full account +
+// data deletion, self-serve. Typed confirmation, no browser dialogs.
+function DangerZone() {
+  const [confirmText, setConfirmText] = useState("");
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function destroy() {
+    setBusy(true);
+    setErr("");
+    try {
+      await sendJSON("/api/auth/account", {}, "DELETE");
+      window.dispatchEvent(new Event("tactiq:signout"));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Deletion failed — try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 16, borderColor: "var(--red, #c0392b)" }}>
+      <h3 style={{ marginTop: 0 }}>🗑 Delete account</h3>
+      <p className="muted small" style={{ lineHeight: 1.6 }}>
+        Permanently removes your account and ALL data — teams, rosters, season history, sessions, schedule, everything.
+        This cannot be undone.
+      </p>
+      {!open ? (
+        <button className="btn ghost" style={{ color: "var(--red, #c0392b)", borderColor: "var(--red, #c0392b)" }} onClick={() => setOpen(true)}>
+          Delete my account…
+        </button>
+      ) : (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label className="field" style={{ margin: 0 }}>
+            Type <b>DELETE</b> to confirm
+            <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" style={{ width: 160 }} />
+          </label>
+          <button className="btn" style={{ background: "var(--red, #c0392b)" }} disabled={confirmText !== "DELETE" || busy} onClick={() => void destroy()}>
+            {busy ? "Deleting…" : "Permanently delete everything"}
+          </button>
+          <button className="btn ghost" onClick={() => { setOpen(false); setConfirmText(""); }}>Cancel</button>
+        </div>
+      )}
+      {err && <div className="error-box">{err}</div>}
     </div>
   );
 }

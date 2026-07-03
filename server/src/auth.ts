@@ -192,7 +192,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { sub: string };
-    (req as AuthedRequest).userId = Number(payload.sub);
+    const userId = Number(payload.sub);
+    // A JWT outlives its account: after self-serve deletion the token still
+    // verifies, so confirm the user row exists — otherwise every endpoint
+    // half-works against a ghost id (and inserts hit FK violations).
+    if (!db.prepare("SELECT 1 FROM users WHERE id = ?").get(userId)) {
+      res.status(401).json({ error: "Account no longer exists — sign in again" });
+      return;
+    }
+    (req as AuthedRequest).userId = userId;
     next();
   } catch {
     res.status(401).json({ error: "Session expired — sign in again" });

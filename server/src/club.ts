@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { addClubComment, addClubSession, clubCoaches, clubReport, getClubBilling, getClubComments, getClubSessions, getCurriculum, getUserClub, setClubPhilosophy, setCurriculum } from "./store.js";
+import { addClubComment, addClubSession, clubCoaches, clubReport, clubSessionBelongsTo, getClubBilling, getClubComments, getClubSessions, getCurriculum, getUserClub, setClubPhilosophy, setCurriculum } from "./store.js";
 import { weekStart } from "./community.js";
 import { levelFor } from "./gamification.js";
 
@@ -125,8 +125,8 @@ clubRouter.post("/sessions", (req, res) => {
 
 clubRouter.get("/sessions/:id/comments", (req, res) => {
   const club = getUserClub(uid(req));
-  if (!club) {
-    res.status(404).json({ error: "Not in a club" });
+  if (!club || !clubSessionBelongsTo(Number(req.params.id), club.id)) {
+    res.status(404).json({ error: "Session not found" });
     return;
   }
   res.json({ comments: getClubComments(Number(req.params.id)) });
@@ -134,8 +134,8 @@ clubRouter.get("/sessions/:id/comments", (req, res) => {
 
 clubRouter.post("/sessions/:id/comments", (req, res) => {
   const club = getUserClub(uid(req));
-  if (!club) {
-    res.status(404).json({ error: "Not in a club" });
+  if (!club || !clubSessionBelongsTo(Number(req.params.id), club.id)) {
+    res.status(404).json({ error: "Session not found" });
     return;
   }
   const text = String(req.body?.text ?? "").trim();

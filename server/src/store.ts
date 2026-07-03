@@ -359,20 +359,6 @@ export function setPlanTier(userId: number, plan: "free" | "pro"): void {
   db.prepare("UPDATE users SET plan = ? WHERE id = ?").run(plan, userId);
 }
 
-// ---- leaderboard (real users; club-scoped when available) ----
-export function leaderboard(userId: number): { rank: number; name: string; xp: number; you: boolean }[] {
-  const me = db.prepare("SELECT club_id FROM users WHERE id = ?").get(userId) as { club_id: number | null } | undefined;
-  const rows = (
-    me?.club_id
-      ? db.prepare(
-          "SELECT u.id, u.name, p.xp FROM users u JOIN progress p ON p.user_id = u.id WHERE u.club_id = ? ORDER BY p.xp DESC LIMIT 25",
-        ).all(me.club_id)
-      : db.prepare(
-          "SELECT u.id, u.name, p.xp FROM users u JOIN progress p ON p.user_id = u.id ORDER BY p.xp DESC LIMIT 25",
-        ).all()
-  ) as { id: number; name: string; xp: number }[];
-  return rows.map((r, i) => ({ rank: i + 1, name: r.name, xp: r.xp, you: r.id === userId }));
-}
 
 export { today };
 
@@ -594,11 +580,6 @@ export function userToday(userId: number, deltaDays = 0): string {
   return new Date(Date.now() + tzOffsetMinutes(userId) * 60_000 + deltaDays * 86_400_000).toISOString().slice(0, 10);
 }
 
-// The coach's local wall-clock "now" as "YYYY-MM-DD HH:MM" — comparable
-// lexicographically against schedule_events.start (stored as floating local).
-export function userLocalNow(userId: number): string {
-  return new Date(Date.now() + tzOffsetMinutes(userId) * 60_000).toISOString().slice(0, 16).replace("T", " ");
-}
 
 export function kvGet(k: string): string | null {
   const row = db.prepare("SELECT v FROM kv WHERE k = ?").get(k) as { v: string } | undefined;
@@ -646,11 +627,6 @@ export function findUserByStripeCustomer(customerId: string): number | null {
 
 // ---- model call ledger (cost integrity: every AI call logged with token usage) ----
 export function logModelCall(c: { userId: number; provider: string; model: string; tier: string; inputTokens: number; outputTokens: number }): void {
-  if (c.userId <= 0) {
-    // Anonymous preview calls have no user row — log to console only.
-    console.log(`[engine] anon ${c.provider}/${c.model} (${c.tier}) in=${c.inputTokens} out=${c.outputTokens}`);
-    return;
-  }
   db.prepare("INSERT INTO model_calls (user_id, provider, model, tier, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)").run(
     c.userId, c.provider, c.model, c.tier, c.inputTokens, c.outputTokens,
   );
@@ -795,13 +771,6 @@ export function feedbackCount(userId: number): number {
   return row.n;
 }
 
-export function feedbackStats(clubId?: number): { kind: string; up: number; down: number }[] {
-  const rows = (clubId
-    ? db.prepare("SELECT f.kind, SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END) up, SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) down FROM feedback f JOIN users u ON u.id=f.user_id WHERE u.club_id = ? GROUP BY f.kind").all(clubId)
-    : db.prepare("SELECT kind, SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END) up, SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) down FROM feedback GROUP BY kind").all()
-  ) as { kind: string; up: number; down: number }[];
-  return rows;
-}
 
 // ---- club comments (bounded community) ----
 export interface ClubComment {
@@ -815,6 +784,12 @@ export function addClubComment(clubId: number, sessionId: number, userId: number
   db.prepare("INSERT INTO club_comments (club_id, session_id, user_id, text) VALUES (?, ?, ?, ?)").run(
     clubId, sessionId, userId, text.slice(0, 1000),
   );
+}
+
+// Ownership check for the comment routes: a coach may only touch threads on
+// their OWN club's sessions — the session id in the URL is not trusted.
+export function clubSessionBelongsTo(sessionId: number, clubId: number): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM club_sessions WHERE id = ? AND club_id = ?").get(sessionId, clubId));
 }
 
 export function getClubComments(sessionId: number): ClubComment[] {

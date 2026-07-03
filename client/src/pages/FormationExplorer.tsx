@@ -200,7 +200,7 @@ export function FormationExplorer() {
     setFormationId(first.id);
     setOppFormationId("");
     setOppPieces([]);
-    resetBoard(first, "base");
+    resetBoard();
   }
 
   function pickScenario(s: ScenarioId) {
@@ -212,14 +212,15 @@ export function FormationExplorer() {
     setHotPiece(null);
   }
 
-  function resetBoard(f: Formation = formation, s: ScenarioId = scenario) {
+  // Clears board edits/reads for the CURRENT formation+scenario state —
+  // callers change those via setState first, then reset.
+  function resetBoard() {
     stopPlayback();
     setGhosts(scenarioPieces.map((p) => ({ ...p })));
     setEdits(new Map());
     setReads([]);
     setHistory([]);
     setHotPiece(null);
-    void f; void s;
   }
 
   // ---- Opposition layer: their shape + posture, lone markers, drag, remove ----

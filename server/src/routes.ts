@@ -7,7 +7,7 @@ import { generateText, bandFor as bandForAgeServer, generateStructured, streamTo
 import { streamText } from "./providers.js";
 import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
-  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
+  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN, mockSeasonPlan,
 } from "./mock.js";
 import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry, refundMessage, topAdvisorNames, setUserTz, userToday,
   adminOverview, estCostToday, getUserBilling, markClubInterest,
@@ -363,7 +363,7 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
 - Season focus (coach's words): ${focus || "overall development with the team's preferred style"}`,
       schema: SEASON_PLAN_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 14000,
-      mock: { ...MOCK_SEASON_PLAN, title: `${MOCK_SEASON_PLAN.title} (demo sample)`, ageGroup: squad?.ageGroup ?? MOCK_SEASON_PLAN.ageGroup },
+      mock: mockSeasonPlan(Number(weeks), squad?.ageGroup),
     });
     const gamify = award(userId, "session");
     const entryId = addSeasonEntry(userId, { kind: "session", title: `Season plan: ${plan_.title}`, summary: `${plan_.weeks.length} weeks`, payload: plan_ });
@@ -457,6 +457,12 @@ api.post("/formation", async (req, res) => {
   }
   if (!format || !ageGroup) {
     res.status(400).json({ error: "format and ageGroup are required" });
+    return;
+  }
+  // Product policy (matches US Soccer): at 4v4 there are no formations —
+  // kids learn the whole pitch. The UI never offers it; guard the API too.
+  if (String(format) === "4v4") {
+    res.status(400).json({ error: "At 4v4 there are no formations — that age is about touches, not positions. Formations start at 7v7 (U9)." });
     return;
   }
   if (!consumeStructured(userId)) {
@@ -792,6 +798,9 @@ api.put("/team", (req, res) => {
     return;
   }
   const squad = sanitizeSquad(s);
+  // The calendar link is imported on a different card than the profile form —
+  // a profile save that omits icsUrl must never wipe an existing import.
+  if (s.icsUrl === undefined) squad.icsUrl = getSquad(userId)?.icsUrl ?? "";
   saveSquad(userId, squad);
   const gamify = award(userId, "squad");
   res.json({ squad, award: gamify });
@@ -938,6 +947,12 @@ api.post("/board/move", async (req, res) => {
     );
     return;
   }
+  // Board reads burn real compute too (deep reads run the flagship engine) —
+  // the dollar ceiling applies here exactly like every other engine call.
+  if (overComputeCeiling(userId)) {
+    res.status(429).json({ error: CEILING_MSG });
+    return;
+  }
   const { format, formation, scenario, board, move, history, depth, opponent, opponents, question } = req.body ?? {};
   if (!formation || !Array.isArray(board) || (!move && !question)) {
     res.status(400).json({ error: "formation, board, and a move or question are required" });
@@ -952,7 +967,8 @@ api.post("/board/move", async (req, res) => {
   }
   try {
     const boardTxt = (board as { label: string; role: string; x: number; y: number }[])
-      .map((p) => `${p.label} (${p.role}) at [${Math.round(p.x)},${Math.round(p.y)}]`)
+      .slice(0, 24) // a board is at most 11 players + markers; cap the prompt
+      .map((p) => `${String(p.label ?? "?").slice(0, 8)} (${String(p.role ?? "?").slice(0, 4)}) at [${Math.round(Number(p.x) || 0)},${Math.round(Number(p.y) || 0)}]`)
       .join("; ");
     // Opposition markers the coach placed on the board — same grid as the
     // coach's own players, so the engine can read the matchups spatially.
@@ -1259,7 +1275,9 @@ async function dailyBriefing(
   const cached = kvGet(key);
   if (cached) return cached;
   let text: string;
-  if (!hasAnyProvider()) {
+  // The briefing is a freebie (no quota slot), so the dollar ceiling is its
+  // only gate — an over-ceiling account gets the assembled-from-memory line.
+  if (!hasAnyProvider() || overComputeCeiling(userId)) {
     text = `Morning, coach. ${ctx.lastMatch ? `Last time out: ${ctx.lastMatch.title}${ctx.lastMatch.story ? ` — "${ctx.lastMatch.story}".` : "."}` : "No games logged yet — set up your team and log your first match day."} ${ctx.nextGame ? `Next up: ${ctx.nextGame.opponent}${ctx.nextGame.date ? ` on ${String(ctx.nextGame.date).slice(0, 10)}` : ""}.` : ""} I'd train ${ctx.suggestion.theme} this week — ${ctx.suggestion.reason}.`;
   } else {
     try {
@@ -1305,6 +1323,8 @@ async function staffMemo(userId: number): Promise<string> {
 
   const staffLine = staff.map((a) => `${a.emoji} ${a.name} (${a.tagline})`).join(" and ");
   let text: string;
+  // Same rule as the briefing: over the compute ceiling, skip the model call.
+  if (overComputeCeiling(userId)) return "";
   if (!hasAnyProvider()) {
     text = `**Staff memo — week of ${week}**\nThis week's staff table: ${staffLine}. With a live engine key, the three of us write you a real memo here every Monday — the week in one line, the trend we're watching in your season record, one note from each advisor in their own voice, and the priority for this week's training.`;
   } else {

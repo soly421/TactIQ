@@ -1,12 +1,19 @@
 import { getProgress, kvGet, kvSet, pushXpHistory, saveProgress, userToday, type Progress } from "./store.js";
 import { recordQuestProgress, type QuestDef } from "./quests.js";
-import { weekStart } from "./community.js";
 
 // One automatic streak freeze per week: miss exactly one day and the flame
 // survives. Life happens; punishing a single missed Tuesday kills streaks
 // (and retention) for no reason. Miss two days and it's a genuine reset.
+// The week is the COACH'S week (Monday of their local day), matching the
+// per-user day boundaries the streak itself runs on.
+function freezeWeek(userId: number): string {
+  const d = new Date(`${userToday(userId)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // back to Monday
+  return d.toISOString().slice(0, 10);
+}
+
 export function streakFreezeAvailable(userId: number): boolean {
-  return kvGet(`freeze:${userId}:${weekStart()}`) === null;
+  return kvGet(`freeze:${userId}:${freezeWeek(userId)}`) === null;
 }
 
 export const FREE_DAILY_MESSAGES = 30;
@@ -96,7 +103,7 @@ export function award(userId: number, action: XpAction, advisorId?: string): Awa
       p.streak += 1;
     } else if (p.lastActiveDay === dayBefore && streakFreezeAvailable(userId)) {
       // Missed exactly one day — burn this week's automatic streak freeze.
-      kvSet(`freeze:${userId}:${weekStart()}`, "used");
+      kvSet(`freeze:${userId}:${freezeWeek(userId)}`, "used");
       p.streak += 1;
     } else {
       p.streak = 1;

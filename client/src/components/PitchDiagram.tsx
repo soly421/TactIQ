@@ -55,6 +55,7 @@ function wavyPath(f: Point, t: Point): string {
 export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
   const [playing, setPlaying] = useState(true);
   const clamp = (p: Point) => ({ x: Math.min(97, Math.max(3, p.x)), y: Math.min(97, Math.max(3, p.y)) });
+  if (!diagram) return null; // a drill without a diagram renders as text only
   const [attackers, defenders, neutrals] = spread([diagram.attackers, diagram.defenders, diagram.neutrals]);
 
   const movements = diagram.movements ?? [];

@@ -32,12 +32,12 @@ U6–U8 (Foundation phase):
 
 U9–U12 (Skill acquisition / golden age of learning):
 - Priority: technique under light pressure — first touch, 1v1 skills, passing/receiving on the half-turn.
-- Small-sided games 4v4 to 7v7. Introduce simple principles: width in possession, compactness out of it.
+- Match formats per US Soccer: U9–U10 play 7v7, U11–U12 play 9v9. Introduce simple principles: width in possession, compactness out of it.
 - Guided discovery questioning over command-style instruction. Rotate positions.
 
 U13–U16 (Game training phase):
 - Introduce tactical concepts: pressing triggers, playing between lines, overloads, switching play.
-- Position-specific detail begins. 9v9 to 11v11. Physical development varies wildly — relative age effect matters.
+- Position-specific detail begins. Match format is 11v11 from U13 up. Physical development varies wildly — relative age effect matters.
 - Training design: game-realistic practices with clear pictures (e.g. build-up vs mid-block).
 
 U17+ (Performance phase):

@@ -27,6 +27,8 @@ export interface Formation {
 }
 
 // Build pieces from row specs (defense -> attack), auto-labeling by side.
+// Sides come from position WITHIN the line (first=L, last=R, middle=C), so
+// pairs like [40,60] get L/R shirts instead of two identical labels.
 function rows(spec: [Role, number, number[]][]): Piece[] {
   const out: Piece[] = [];
   const counts = new Map<Role, number>();
@@ -34,7 +36,7 @@ function rows(spec: [Role, number, number[]][]): Piece[] {
     xs.forEach((x, i) => {
       const n = (counts.get(role) ?? 0) + 1;
       counts.set(role, n);
-      const side = xs.length === 1 ? "" : x < 40 ? "L" : x > 60 ? "R" : xs.length >= 3 ? "C" : "";
+      const side = xs.length === 1 ? "" : i === 0 ? "L" : i === xs.length - 1 ? "R" : "C";
       out.push({ id: `${role}${n}`, role, label: role === "GK" ? "GK" : `${side}${role}`.slice(0, 3), x, y });
     });
   }
@@ -88,7 +90,7 @@ export const FORMATIONS: Formation[] = [
 
   // ---------------- 9v9 (GK + 8) ----------------
   {
-    id: "9-231", format: "9v9", name: "3-2-3",
+    id: "9-323", format: "9v9", name: "3-2-3",
     blurb: "Triangles everywhere — the most possession-friendly 9v9 shape.",
     pieces: rows([["GK", 92, [50]], ["CB", 76, [25, 50, 75]], ["CM", 54, [38, 62]], ["W", 30, [15, 85]], ["ST", 26, [50]]]),
     notes: { defCross: "Wingers MUST recover to make a back five in the box — the back three can't defend both posts." },

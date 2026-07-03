@@ -76,8 +76,11 @@ export function maybeFinalizeWeek(): void {
   // Promote/demote based on LAST week's final standings (weekly XP as of now,
   // which at rollover time is last week's total since the epoch just moved).
   const promoteTo = db.prepare("UPDATE progress SET league = ? WHERE user_id = ?");
-  for (const { tier } of LEAGUES) {
-    const standings = leagueStandingsLastWeek(tier);
+  // Snapshot EVERY tier's standings before applying any writes — otherwise a
+  // coach promoted out of tier N is re-read in tier N+1's live query and can
+  // be promoted twice (or instantly relegated) in a single rollover.
+  const snapshots = LEAGUES.map(({ tier }) => ({ tier, standings: leagueStandingsLastWeek(tier) }));
+  for (const { tier, standings } of snapshots) {
     const { promote, demote } = zoneSizes(standings.length);
     standings.slice(0, promote).forEach((s) => {
       if (tier < LEAGUES.length - 1 && s.weeklyXp > 0) promoteTo.run(tier + 1, s.userId);

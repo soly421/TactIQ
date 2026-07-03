@@ -56,13 +56,17 @@ export function classifyEvent(title: string): { kind: ScheduleEvent["kind"]; opp
   return { kind: "other", opponent: "" };
 }
 
-// Basic SSRF guard: https only, no obviously-internal hosts.
+// Basic SSRF guard: https only, no obviously-internal hosts (IPv4 private
+// ranges, IPv6 literals, .local/.internal names). Not a full DNS-rebinding
+// defense, but closes every straightforward internal-fetch path.
 function safeCalendarUrl(raw: string): URL | null {
   try {
     const u = new URL(raw.replace(/^webcal:/i, "https:"));
     if (u.protocol !== "https:") return null;
-    const h = u.hostname;
-    if (h === "localhost" || /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(h) || !h.includes(".")) return null;
+    const h = u.hostname.toLowerCase();
+    if (h === "localhost" || h.includes(":") || h.startsWith("[")) return null; // IPv6 literals incl. ::1
+    if (/^127\.|^0\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(h)) return null;
+    if (!h.includes(".") || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".localhost")) return null;
     return u;
   } catch {
     return null;
