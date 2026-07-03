@@ -87,8 +87,8 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
 
         <div className="card price-card">
           <h3>🏛️ Club</h3>
-          <div className="price"><b>$10</b><span className="muted small"> /coach/mo · 10-seat minimum</span></div>
-          <p className="muted small">A third of the individual Pro price, for every coach on staff. The DOC gets the dashboard, the monthly report, philosophy distribution, and one invoice. Volume pricing above 25 seats.</p>
+          <div className="price"><b>$14.99</b><span className="muted small"> /coach/mo · 10-seat minimum</span></div>
+          <p className="muted small">Half the individual Pro price, for every coach on staff. The DOC gets the dashboard, the monthly report, philosophy distribution, and one invoice. Volume pricing above 25 seats.</p>
           <div className="founding-offer">
             🏆 <b>Founding Club offer</b> — the first 10 clubs get <b>50% off year one</b>, a founders' badge, and a direct line to the team. Code <code>FOUNDING50</code> at checkout.
           </div>

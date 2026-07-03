@@ -48,7 +48,7 @@ services:
       - key: STRIPE_PRICE_ID_PRO_ANNUAL
         sync: false # $299/yr annual price (2 months free vs monthly)
       - key: STRIPE_PRICE_ID_CLUB_SEAT
-        sync: false # $10/seat/mo, quantity = seats (server enforces 10-seat minimum)
+        sync: false # $14.99/seat/mo, quantity = seats (server enforces 10-seat minimum)
       - key: RESEND_API_KEY
         sync: false # enables weekly digest emails + password reset
       - key: TEAMSNAP_CLIENT_ID
