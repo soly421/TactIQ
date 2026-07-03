@@ -2,6 +2,7 @@ import { savePlanOffline } from "../savedPlans";
 import { useEffect, useMemo, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { ArtifactRow } from "../components/ArtifactView";
+import { Library } from "./Library";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
 import type { AwardResult, School, SeasonEntry, SessionPlan, SquadProfile } from "../types";
@@ -10,7 +11,7 @@ const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "
 
 export function SessionStudio() {
   const { celebrate } = useGamify();
-  const [mode, setMode] = useState<"design" | "mine">("design");
+  const [mode, setMode] = useState<"design" | "library" | "mine">("design");
   const [mine, setMine] = useState<SeasonEntry[]>([]);
   const [query, setQuery] = useState("");
   const [schools, setSchools] = useState<School[]>([]);
@@ -94,8 +95,11 @@ export function SessionStudio() {
     <div className="fade-in">
       <div className="tabs" style={{ marginBottom: 14 }}>
         <button className={`tab ${mode === "design" ? "active" : ""}`} onClick={() => setMode("design")}>⚡ Design a session</button>
+        <button className={`tab ${mode === "library" ? "active" : ""}`} onClick={() => setMode("library")}>📚 Start from the Library</button>
         <button className={`tab ${mode === "mine" ? "active" : ""}`} onClick={() => setMode("mine")}>📁 My sessions{mine.length ? ` (${mine.length})` : ""}</button>
       </div>
+
+      {mode === "library" && <Library embedded />}
 
       {mode === "mine" && (
         <div className="card" style={{ marginBottom: 20 }}>

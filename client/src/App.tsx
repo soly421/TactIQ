@@ -6,7 +6,6 @@ import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
 import { Advisors } from "./pages/Advisors";
-import { Library } from "./pages/Library";
 import { Studio } from "./pages/Studio";
 import { MatchDay } from "./pages/MatchDay";
 import { Team } from "./pages/Team";
@@ -20,7 +19,6 @@ const NAV = [
   { id: "home", label: "Home", emoji: "🏠" },
   { id: "chat", label: "Ask Coach Sam", emoji: "💬" },
   { id: "advisors", label: "Advisors", emoji: "🧠" },
-  { id: "library", label: "Library", emoji: "📚" },
   { id: "studio", label: "Training Lab", emoji: "🔬" },
   { id: "matchday", label: "Match Day", emoji: "📣" },
   { id: "team", label: "My Team", emoji: "🛡️" },
@@ -155,7 +153,6 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "home" && <Dashboard go={setTab} />}
         {tab === "chat" && <Chat />}
         {tab === "advisors" && <Advisors />}
-        {tab === "library" && <Library />}
         {tab === "studio" && <Studio />}
         {tab === "matchday" && <MatchDay />}
         {tab === "team" && <Team />}

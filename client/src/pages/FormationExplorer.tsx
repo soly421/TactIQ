@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { formatForAge, NO_FORMATION_NOTE } from "../age";
+import { FormationAnalysisView } from "../components/FormationAnalysisView";
 import { TacticsBoard } from "../components/TacticsBoard";
 import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
@@ -8,7 +9,7 @@ import {
   CHOREO, FORMATIONS, SCENARIOS, applyScenario, quickRead, resolveBallPath, shapeMeters,
   type Formation, type Piece, type ScenarioId,
 } from "../formations";
-import type { AwardResult } from "../types";
+import type { AwardResult, FormationAnalysis } from "../types";
 
 // The Formation Encyclopedia + chess mode. Pick any shape, watch it morph
 // through nine game scenarios — or hit Play and watch the movement unfold:
@@ -72,6 +73,14 @@ export function FormationExplorer() {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [smallSided, setSmallSided] = useState(false);
+  const [squadInfo, setSquadInfo] = useState<{ ageGroup?: string; preferredStyle?: string } | null>(null);
+
+  // The full game-model report (the old AI Formation Analysis, now one tap
+  // from the board — format, age, style, and opposition all come from here).
+  const [report, setReport] = useState<FormationAnalysis | null>(null);
+  const [reportEntryId, setReportEntryId] = useState<number | undefined>();
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
 
   // ---- scenario playback: staggered waves of movement + the ball's story ----
   const [playing, setPlaying] = useState(false);
@@ -82,9 +91,10 @@ export function FormationExplorer() {
   // Open the board on the coach's own format — an 11v11 coach shouldn't land
   // on a 7v7 pitch. 4v4 teams (U6-U8) get the 7v7 board plus the why-note.
   useEffect(() => {
-    void getJSON<{ squad: { ageGroup?: string; format?: string } | null }>("/api/team")
+    void getJSON<{ squad: { ageGroup?: string; format?: string; preferredStyle?: string } | null }>("/api/team")
       .then((r) => {
         if (!r.squad) return;
+        setSquadInfo({ ageGroup: r.squad.ageGroup, preferredStyle: r.squad.preferredStyle });
         const derived = formatForAge(r.squad.ageGroup) ?? r.squad.format;
         if (derived === "4v4") {
           setSmallSided(true);
@@ -293,6 +303,29 @@ export function FormationExplorer() {
     }
   }
 
+  // Generate the full game-model report for the current formation, grounded
+  // in the team profile and the opposition set on this board.
+  async function generateReport() {
+    if (reportLoading) return;
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const r = await sendJSON<{ analysis: FormationAnalysis; award: AwardResult; entryId?: number }>("/api/formation", {
+        format,
+        ageGroup: squadInfo?.ageGroup || (format === "7v7" ? "U9" : format === "9v9" ? "U11" : "U13"),
+        style: `${squadInfo?.preferredStyle || ""} — the coach is exploring a ${formation.name}`.trim(),
+        opponentNotes: [opponent, oppPieces.length ? `their on-board positions: ${oppPayload.map((o) => `${o.label}[${o.x},${o.y}]`).join(" ")}` : ""].filter(Boolean).join("; "),
+        depth: depth === "quick" ? "quick" : depth === "deep" ? "deep" : "standard",
+      });
+      setReport(r.analysis);
+      setReportEntryId(r.entryId);
+      celebrate(r.award);
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : "Report failed");
+    }
+    setReportLoading(false);
+  }
+
   // Ask the engine a direct question about the current board + opposition.
   async function ask() {
     if (!question.trim() || asking) return;
@@ -352,7 +385,13 @@ export function FormationExplorer() {
             </button>
           ))}
         </div>
-        <p className="muted small" style={{ margin: "8px 0 0" }}>{formation.blurb}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          <p className="muted small" style={{ margin: 0 }}>{formation.blurb}</p>
+          <button className="btn ghost" style={{ fontSize: 12 }} disabled={reportLoading} onClick={() => void generateReport()} title="The complete AI game model for this shape: phases, strengths, vulnerabilities, training priorities">
+            {reportLoading ? "Building the game model…" : "🔬 Full game-model report"}
+          </button>
+        </div>
+        {reportError && <div className="error-box">{reportError}</div>}
         {smallSided && <p className="small" style={{ margin: "8px 0 0", color: "var(--gold)" }}>⚽ {NO_FORMATION_NOTE}</p>}
       </div>
 
@@ -496,6 +535,12 @@ export function FormationExplorer() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {report && (
+        <div style={{ marginTop: 16 }}>
+          <FormationAnalysisView analysis={report} entryId={reportEntryId} />
         </div>
       )}
     </div>

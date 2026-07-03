@@ -124,7 +124,7 @@ function Wizard({ defaultBand, onApply, onClose }: { defaultBand: string; onAppl
   );
 }
 
-export function Library() {
+export function Library({ embedded }: { embedded?: boolean } = {}) {
   const { celebrate } = useGamify();
   const ent = useEntitlements();
   const [templates, setTemplates] = useState<SessionTemplate[]>([]);
@@ -222,7 +222,7 @@ export function Library() {
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h1>The Library</h1>
+          {embedded ? <h2 style={{ margin: 0 }}>Start from the Library</h2> : <h1>The Library</h1>}
           <p className="sub" style={{ maxWidth: 640 }}>
             <b>{groups.length} exercises & topics</b> ({templates.length.toLocaleString()} sessions across ages and levels) — from the
             zone curriculum and the world's academy traditions. Every unlock is built live for <i>your</i> team.

@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { SessionStudio } from "./SessionStudio";
-import { FormationLab } from "./FormationLab";
 import { FormationExplorer } from "./FormationExplorer";
 import { FieldBoard } from "./FieldBoard";
 import { savePlanOffline } from "../savedPlans";
@@ -13,8 +12,7 @@ import type { AwardResult, SeasonPlan, SessionPlan } from "../types";
 const SEGMENTS = [
   { id: "sessions", label: "📋 Sessions" },
   { id: "scan", label: "📷 Session Scan" },
-  { id: "board", label: "🎯 Field Board" },
-  { id: "formations", label: "🔷 Formations" },
+  { id: "tactics", label: "♟️ Tactics Board" },
   { id: "season", label: "🗓️ Season Plan" },
 ];
 
@@ -35,8 +33,7 @@ export function Studio() {
       </div>
       {seg === "sessions" && <SessionStudio />}
       {seg === "scan" && <SessionScan />}
-      {seg === "board" && <FieldBoard />}
-      {seg === "formations" && <FormationsTab />}
+      {seg === "tactics" && <TacticsTab />}
       {seg === "season" && (ent === null || ent.seasonPlanner ? <SeasonPlanner /> : (
         <div className="pro-gate">
           <h3>📅 The Season Planner is a Pro feature</h3>
@@ -188,15 +185,15 @@ function SeasonPlanner() {
 
 
 // Formations: the interactive encyclopedia + the AI formation analyst.
-function FormationsTab() {
-  const [mode, setMode] = useState<"explorer" | "analysis">("explorer");
+function TacticsTab() {
+  const [mode, setMode] = useState<"formations" | "freehand">("formations");
   return (
     <div>
       <div className="tabs" style={{ marginBottom: 14 }}>
-        <button className={`tab ${mode === "explorer" ? "active" : ""}`} onClick={() => setMode("explorer")}>♟️ Interactive Board</button>
-        <button className={`tab ${mode === "analysis" ? "active" : ""}`} onClick={() => setMode("analysis")}>🔬 AI Formation Analysis</button>
+        <button className={`tab ${mode === "formations" ? "active" : ""}`} onClick={() => setMode("formations")}>♟️ Formations & scenarios</button>
+        <button className={`tab ${mode === "freehand" ? "active" : ""}`} onClick={() => setMode("freehand")} title="Blank pitch — place players, cones and arrows freehand">🎨 Freehand sketch</button>
       </div>
-      {mode === "explorer" ? <FormationExplorer /> : <FormationLab />}
+      {mode === "formations" ? <FormationExplorer /> : <FieldBoard />}
     </div>
   );
 }
