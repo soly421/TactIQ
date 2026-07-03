@@ -64,7 +64,7 @@ api.post("/try/session", async (req, res) => {
   }
   try {
     const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
-      tier: "light",
+      tier: "standard", // the first impression — never the weakest model; 3/IP/day bounds it
       userId: 0, // unauthenticated preview — excluded from the per-user ledger
       system: `${baseSystemPrompt()}
 
@@ -656,7 +656,7 @@ api.post("/matchday/postgame", async (req, res) => {
   }
   const gamify = award(userId, "matchday");
   await streamToSSE(res, {
-    tier: tierFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "structured"),
     userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
@@ -744,7 +744,7 @@ api.post("/film-analysis", async (req, res) => {
   });
 
   await streamToSSE(res, {
-    tier: tierFor(planOf(userId), "chat"),
+    tier: tierFor(planOf(userId), "structured"),
     userId,
     system: `${baseSystemPrompt()}${teamContext(userId)}
 
@@ -1314,7 +1314,7 @@ async function staffMemo(userId: number): Promise<string> {
   } else {
     try {
       text = await generateText({
-        tier: "light",
+        tier: "standard",
         userId,
         system: `${assistantSystemPrompt(teamContext(userId))}
 
