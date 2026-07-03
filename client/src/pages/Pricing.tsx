@@ -89,7 +89,7 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
           <div className="founding-offer">
             🏆 <b>Founding Club offer</b> — the first 10 clubs get <b>50% off year one</b>, a founders' badge, and a direct line to the team. Code <code>FOUNDING50</code> at checkout.
           </div>
-          <button className="btn ghost" style={{ marginTop: "auto" }} onClick={() => go("club")}>
+          <button className="btn ghost" style={{ marginTop: "auto" }} onClick={() => go("community")}>
             License your club →
           </button>
         </div>

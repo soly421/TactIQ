@@ -9,8 +9,8 @@ import { Advisors } from "./pages/Advisors";
 import { Studio } from "./pages/Studio";
 import { MatchDay } from "./pages/MatchDay";
 import { Team } from "./pages/Team";
-import { Club } from "./pages/Club";
 import { Community } from "./pages/Community";
+import { TacticsPage } from "./pages/TacticsPage";
 import { Privacy } from "./pages/Privacy";
 import { Pricing } from "./pages/Pricing";
 import type { Settings, User } from "./types";
@@ -20,9 +20,9 @@ const NAV = [
   { id: "chat", label: "Ask Coach Sam", emoji: "💬" },
   { id: "advisors", label: "Advisors", emoji: "🧠" },
   { id: "studio", label: "Training Lab", emoji: "🔬" },
+  { id: "tactics", label: "Tactics Board", emoji: "♟️" },
   { id: "matchday", label: "Match Day", emoji: "📣" },
   { id: "team", label: "My Team", emoji: "🛡️" },
-  { id: "club", label: "Club", emoji: "🏛️" },
   { id: "community", label: "Community", emoji: "🏆" },
 ];
 
@@ -154,10 +154,10 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "chat" && <Chat />}
         {tab === "advisors" && <Advisors />}
         {tab === "studio" && <Studio />}
+        {tab === "tactics" && <TacticsPage />}
         {tab === "matchday" && <MatchDay />}
         {tab === "team" && <Team />}
-        {tab === "club" && <Club user={user} />}
-        {tab === "community" && <Community />}
+        {tab === "community" && <Community user={user} />}
         {tab === "privacy" && <Privacy />}
         {tab === "pricing" && <Pricing go={setTab} />}
       </main>
