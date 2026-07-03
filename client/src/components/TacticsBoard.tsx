@@ -15,13 +15,14 @@ interface Props {
   onMoveOpp?: (piece: Piece, from: { x: number; y: number }) => void;
   onRemoveOpp?: (id: string) => void;
   highlight?: string | null; // piece id being analyzed
+  ball?: { x: number; y: number } | null; // animated ball during scenario playback
 }
 
 const ROLE_COLOR: Record<string, string> = {
   GK: "#e8b64c", CB: "#7ea8ff", FB: "#7ea8ff", DM: "#2dd4bf", CM: "#2dd4bf", AM: "#c084fc", W: "#ff7a1a", ST: "#ff7a1a",
 };
 
-export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onRemoveOpp, highlight }: Props) {
+export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onRemoveOpp, highlight, ball }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; side: "own" | "opp"; fromX: number; fromY: number } | null>(null);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -147,6 +148,14 @@ export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onR
           </g>
         );
       })}
+
+      {/* the ball — on top of everyone, gliding between choreography waypoints */}
+      {ball && (
+        <g transform={`translate(${ball.x}, ${ball.y})`} style={{ transition: "transform 0.75s ease-in-out", pointerEvents: "none" }}>
+          <circle r="1.7" fill="#fff" stroke="#0d2818" strokeWidth="0.4" />
+          <circle r="0.7" fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth="0.3" />
+        </g>
+      )}
     </svg>
   );
 }

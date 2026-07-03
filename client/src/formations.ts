@@ -199,130 +199,315 @@ export const SCENARIOS: Scenario[] = [
 
 const clamp = (v: number, lo = 4, hi = 96) => Math.min(hi, Math.max(lo, v));
 
-// Apply a scenario to a formation's base pieces. Pure and role-driven, with
-// per-formation quirks handled by the shape itself (positions already differ).
+// Rescale a piece's width around the pitch center — preserves left/right
+// order and relative spacing within a line, so lines compress or stretch
+// without ever collapsing into each other.
+const scaleX = (p: Piece, f: number, lo = 6, hi = 94) => { p.x = clamp(50 + (p.x - 50) * f, lo, hi); };
+
+// No two pieces may occupy the same spot: nudge overlapping pairs apart.
+// A safety net so every one of the 20 formations stays readable in every
+// scenario, whatever the role mix.
+function resolveCollisions(ps: Piece[]): Piece[] {
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = i + 1; j < ps.length; j++) {
+        const dx = ps[j].x - ps[i].x, dy = ps[j].y - ps[i].y;
+        const d = Math.hypot(dx, dy);
+        if (d < 6) {
+          const ux = d < 0.01 ? 1 : dx / d, uy = d < 0.01 ? 0 : dy / d;
+          const push = (6 - d) / 2 + 0.3;
+          ps[i].x = clamp(ps[i].x - ux * push); ps[i].y = clamp(ps[i].y - uy * push);
+          ps[j].x = clamp(ps[j].x + ux * push); ps[j].y = clamp(ps[j].y + uy * push);
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return ps;
+}
+
+// Apply a scenario to a formation's base pieces. Line-based and tactically
+// grounded: each row keeps its structure while line heights and widths move
+// to the standard coaching picture for that moment of the game.
 export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
   const ps = f.pieces.map((p) => ({ ...p }));
   const by = (r: Role) => ps.filter((p) => p.role === r);
   const wingers = by("W");
   const sts = by("ST");
-  const front = [...wingers, ...sts, ...by("AM")];
+  const cms = by("CM").sort((a, b) => a.x - b.x);
 
   switch (s) {
     case "base":
       return ps;
+
     case "buildup": {
+      // The +1 build: GK stays as the spare, back line splits to the width of
+      // the box, the pivot shows between their strikers, wide players push
+      // high before the ball moves, striker pins the last line.
+      const backs = by("CB");
       for (const p of ps) {
-        if (p.role === "GK") p.y = 84;
-        if (p.role === "CB") { p.x = p.x < 50 ? p.x - 8 : p.x > 50 ? p.x + 8 : p.x; p.y += 2; }
-        if (p.role === "FB") { p.y -= 16; p.x = p.x < 50 ? clamp(p.x - 3) : clamp(p.x + 3); }
-        if (p.role === "DM") p.y += 6;
-        if (p.role === "CM") { p.y -= 4; p.x = p.x < 50 ? p.x - 4 : p.x > 50 ? p.x + 4 : p.x; }
-        if (p.role === "W") p.y -= 2;
-        if (p.role === "AM") p.y -= 2;
-        p.x = clamp(p.x); p.y = clamp(p.y, 4, 94);
+        if (p.role === "GK") p.y = 88;
+        else if (p.role === "CB") { p.y = 76; scaleX(p, backs.length >= 3 ? 1.3 : 1.6, 16, 84); }
+        else if (p.role === "FB") { p.y = 48; scaleX(p, 1.15, 6, 94); }
+        else if (p.role === "DM") { p.y = 62; scaleX(p, 0.9); }
+        else if (p.role === "AM") p.y = 38;
+        else if (p.role === "W") { p.y = 25; scaleX(p, 1.12, 8, 92); }
+        else if (p.role === "ST") p.y = 16;
       }
-      return ps;
+      // Midfield staggers: wide CMs become the out-balls, the central CM
+      // drops toward the ball as the pivot.
+      cms.forEach((c) => {
+        const live = ps.find((p) => p.id === c.id)!;
+        const central = Math.abs(c.x - 50) < 12;
+        if (central) live.y = by("DM").length ? 50 : 58;
+        else { live.y = 46; scaleX(live, 1.3, 8, 92); }
+      });
+      return resolveCollisions(ps);
     }
+
     case "highpress": {
-      const push = 20;
+      // Squeeze the whole team up: back line holds halfway, keeper sweeps
+      // behind it, front curves onto their build-up.
       for (const p of ps) {
-        if (p.role === "GK") p.y = 78;
-        else if (p.role === "CB" || p.role === "FB") p.y = clamp(p.y - push, 45);
-        else if (p.role === "DM" || p.role === "CM") p.y = clamp(p.y - push, 30);
-        else p.y = clamp(p.y - 14, 8);
-        if (p.role !== "GK") p.x = 50 + (p.x - 50) * 0.88;
+        if (p.role === "GK") p.y = 70;
+        else if (p.role === "CB") { p.y = 50; scaleX(p, 0.9); }
+        else if (p.role === "FB") { p.y = 46; scaleX(p, 0.95); }
+        else if (p.role === "DM") p.y = 38;
+        else if (p.role === "CM") { p.y = 32; scaleX(p, 0.85); }
+        else if (p.role === "AM") p.y = 20;
+        else if (p.role === "W") { p.y = 15; scaleX(p, 0.9); }
+        else if (p.role === "ST") p.y = 9;
       }
-      return ps;
+      return resolveCollisions(ps);
     }
+
     case "midblock": {
+      // 30 yards front-to-back, protect the middle, force play around.
       for (const p of ps) {
         if (p.role === "GK") p.y = 90;
-        else if (p.role === "CB") p.y = 68;
-        else if (p.role === "FB") p.y = 66;
-        else if (p.role === "DM") p.y = 56;
-        else if (p.role === "CM") p.y = 50;
-        else if (p.role === "AM") p.y = 42;
-        else if (p.role === "W") p.y = 46;
-        else p.y = 38;
-        if (p.role !== "GK") p.x = 50 + (p.x - 50) * 0.72;
+        else if (p.role === "CB") { p.y = 70; scaleX(p, 0.85); }
+        else if (p.role === "FB") { p.y = 68; scaleX(p, 0.88); }
+        else if (p.role === "DM") { p.y = 58; scaleX(p, 0.8); }
+        else if (p.role === "CM") { p.y = 53; scaleX(p, 0.75); }
+        else if (p.role === "W") { p.y = 47; scaleX(p, 0.72); }
+        else if (p.role === "AM") { p.y = 45; scaleX(p, 0.6); }
+        else if (p.role === "ST") { p.y = 40; scaleX(p, 0.5); }
       }
-      return ps;
+      return resolveCollisions(ps);
     }
+
     case "lowblock": {
+      // Defend the width of the box; one outlet stays alive for the counter.
       for (const p of ps) {
-        if (p.role === "GK") p.y = 93;
-        else if (p.role === "CB") p.y = 82;
-        else if (p.role === "FB") p.y = 80;
-        else if (p.role === "DM") p.y = 72;
-        else if (p.role === "CM") p.y = 68;
-        else if (p.role === "W") p.y = 64;
-        else if (p.role === "AM") p.y = 60;
-        else p.y = 52;
-        if (p.role !== "GK") p.x = 50 + (p.x - 50) * 0.6;
+        if (p.role === "GK") p.y = 94;
+        else if (p.role === "CB") { p.y = 84; scaleX(p, 0.72); }
+        else if (p.role === "FB") { p.y = 82; scaleX(p, 0.8); }
+        else if (p.role === "DM") { p.y = 76; scaleX(p, 0.7); }
+        else if (p.role === "CM") { p.y = 73; scaleX(p, 0.68); }
+        else if (p.role === "W") { p.y = 69; scaleX(p, 0.7); }
+        else if (p.role === "AM") { p.y = 67; scaleX(p, 0.6); }
+        else if (p.role === "ST") { p.y = 62; scaleX(p, 0.5); }
       }
-      // one outlet stays higher for the counter
       const outlet = sts[0] ?? wingers[0];
-      if (outlet) { const live = ps.find((p) => p.id === outlet.id)!; live.y = 44; }
-      return ps;
+      if (outlet) { const live = ps.find((p) => p.id === outlet.id)!; live.x = 50; live.y = 46; }
+      return resolveCollisions(ps);
     }
+
     case "attTransition": {
+      // First 3 seconds after winning it: runners break, wide players STAY
+      // wide, rest-defense (CBs + pivot) holds its line.
       for (const p of ps) {
-        if (p.role === "ST" || p.role === "W") p.y = clamp(p.y - 14, 6);
-        if (p.role === "AM") p.y = clamp(p.y - 10, 12);
-        if (p.role === "CM") p.y = clamp(p.y - 6, 24);
-        if (p.role === "FB") { const wide = p.x < 50 ? p.x - 2 : p.x + 2; p.x = clamp(wide); }
+        if (p.role === "ST") p.y = clamp(p.y - 18, 6);
+        else if (p.role === "W") { p.y = clamp(p.y - 16, 8); scaleX(p, 1.08, 8, 92); }
+        else if (p.role === "AM") p.y = clamp(p.y - 12, 12);
+        else if (p.role === "CM") p.y = clamp(p.y - 8, 24);
+        else if (p.role === "FB") { p.y = clamp(p.y - 6, 30); scaleX(p, 1.05, 6, 94); }
+        else if (p.role === "CB") p.y = Math.min(p.y, 64);
+        else if (p.role === "GK") p.y = 88;
       }
-      return ps;
+      return resolveCollisions(ps);
     }
+
     case "defTransition": {
-      // front players converge on the loss point (center circle), rest drop
-      const ball = { x: 50, y: 46 };
+      // The 5-second rule: ONLY the nearest 2-3 hunt the loss point — they
+      // surround the ball, they don't pile onto one spot. Everyone else drops
+      // and narrows, keeping their line.
+      const ball = { x: 50, y: 42 };
+      const hunters = ps
+        .filter((p) => ["ST", "W", "AM", "CM"].includes(p.role))
+        .sort((a, b) => Math.hypot(a.x - ball.x, a.y - ball.y) - Math.hypot(b.x - ball.x, b.y - ball.y))
+        .slice(0, 3);
+      const ring: [number, number][] = [[0, -8], [-9, 5], [9, 5]];
+      const free = [...ring];
+      for (const h of hunters) {
+        const live = ps.find((p) => p.id === h.id)!;
+        let best = 0, bd = Infinity;
+        free.forEach((r, i) => {
+          const d = Math.hypot(ball.x + r[0] - h.x, ball.y + r[1] - h.y);
+          if (d < bd) { bd = d; best = i; }
+        });
+        const r = free.splice(best, 1)[0];
+        live.x = clamp(ball.x + r[0]);
+        live.y = clamp(ball.y + r[1]);
+      }
       for (const p of ps) {
-        if (front.some((f2) => f2.id === p.id) || (p.role === "CM" && Math.abs(p.x - 50) < 20)) {
-          p.x = p.x + (ball.x - p.x) * 0.55;
-          p.y = p.y + (ball.y - p.y) * 0.55;
-        } else if (p.role !== "GK") {
-          p.y = clamp(p.y + 6, 10, 90);
-          p.x = 50 + (p.x - 50) * 0.85;
+        if (hunters.some((h) => h.id === p.id)) continue;
+        if (p.role === "GK") p.y = 92;
+        else if (p.role === "CB" || p.role === "FB") { p.y = clamp(p.y + 4, 10, 88); scaleX(p, 0.85); }
+        else if (p.role === "DM") { p.x = clamp(50 + (p.x - 50) * 0.6); p.y = 56; }
+        else { p.y = clamp(p.y + 8, 10, 88); scaleX(p, 0.8); }
+      }
+      return resolveCollisions(ps);
+    }
+
+    case "wideAttack": {
+      // Overload the right, four distinct box arrivals: near post, far post,
+      // cutback, top of the box. Every piece gets its OWN slot.
+      for (const p of ps) {
+        if (p.role === "GK") p.y = 90;
+        else if (p.role === "CB") { p.y = 60; scaleX(p, 0.8); p.x = clamp(p.x + 5); }
+        else if (p.role === "AM") { p.x = 52; p.y = 24; }
+        else if (p.role === "W") {
+          if (p.x > 50) { p.x = 87; p.y = 16; }           // the overloaded winger
+          else { p.x = 38; p.y = 12; }                     // far-post arrival
+        } else if (p.role === "FB") {
+          if (p.x > 50) { p.x = 92; p.y = 26; }            // overlap
+          else { p.x = 30; p.y = 52; }                     // tucks in for balance
+        } else if (p.role === "ST") {
+          p.y = 10; p.x = sts.length > 1 ? (p.x < 50 ? 46 : 60) : 58; // near post
         }
       }
-      return ps;
+      // Pivots stagger: near-side pivot supports the overload, the other
+      // balances — never the same spot.
+      const dms = by("DM").sort((a, b) => a.x - b.x);
+      dms.forEach((d, i) => {
+        const live = ps.find((p) => p.id === d.id)!;
+        const slots: [number, number][] = dms.length >= 2 ? [[42, 50], [60, 44]] : [[54, 48]];
+        const slot = slots[Math.min(i, slots.length - 1)];
+        live.x = slot[0]; live.y = slot[1];
+      });
+      // Midfield arrivals: right-most CM attacks the top of the box, the
+      // others hold staggered recycling angles — never the same spot.
+      cms.forEach((c, i) => {
+        const live = ps.find((p) => p.id === c.id)!;
+        const slots: [number, number][] = cms.length >= 3 ? [[32, 44], [48, 40], [66, 32]] : [[40, 42], [66, 32]];
+        const slot = slots[Math.min(i, slots.length - 1)];
+        live.x = slot[0]; live.y = slot[1];
+      });
+      return resolveCollisions(ps);
     }
-    case "wideAttack": {
-      // overload the right, arrive in the box
-      for (const p of ps) {
-        if (p.role === "W" && p.x > 50) { p.x = 86; p.y = 18; }
-        else if (p.role === "W") { p.x = 38; p.y = 14; } // far post arrival
-        else if (p.role === "ST") { p.x = sts.length > 1 ? (p.x < 50 ? 44 : 58) : 58; p.y = 12; }
-        else if (p.role === "AM") { p.x = 52; p.y = 24; } // cutback zone
-        else if (p.role === "FB" && p.x > 50) { p.x = 92; p.y = 28; } // overlap
-        else if (p.role === "FB") { p.y -= 8; }
-        else if (p.role === "CM" && p.x >= 50) { p.x = 68; p.y = 34; }
-        else if (p.role === "CM") { p.y = 40; }
-        else if (p.role === "DM") { p.y = 48; }
-        else if (p.role === "CB") { p.y = 60; p.x = 50 + (p.x - 50) * 0.8; }
-        p.x = clamp(p.x); p.y = clamp(p.y, 6);
-      }
-      return ps;
-    }
+
     case "defCross": {
-      // ball on their right = our left; back line zonal across the box
+      // Ball on our left flank. The back line NEVER drops below two zonal
+      // defenders in the box; the presser comes from the line with cover.
       const backs = [...by("CB"), ...by("FB")].sort((a, b) => a.x - b.x);
-      const zones = backs.length >= 4 ? [32, 44, 56, 68] : [36, 50, 64];
-      backs.forEach((b, i) => { const live = ps.find((p) => p.id === b.id)!; live.x = zones[i % zones.length]; live.y = 86; });
-      const nearFB = backs[0];
-      if (nearFB) { const live = ps.find((p) => p.id === nearFB.id)!; live.x = 18; live.y = 78; } // pressing the crosser
-      for (const p of ps) {
-        if (p.role === "DM") { p.x = 50; p.y = 74; } // cutback zone
-        else if (p.role === "CM") { p.y = 72; p.x = 50 + (p.x - 50) * 0.5; }
-        else if (p.role === "AM" || p.role === "W") { p.y = 62; p.x = 50 + (p.x - 50) * 0.5; }
-        else if (p.role === "ST") { p.y = 50; } // outlet
-        else if (p.role === "GK") p.y = 93;
+      const mids = [...by("DM"), ...cms].sort((a, b) => a.x - b.x);
+      let presser: Piece | undefined;
+      let zonal = backs;
+      if (backs.length >= 4) {
+        presser = backs[0];                                  // near fullback presses
+        zonal = backs.slice(1);
+      } else {
+        presser = mids[0];                                   // near mid presses, backs stay home
       }
-      return ps;
+      const zones = zonal.length >= 4 ? [34, 45, 56, 67] : zonal.length === 3 ? [38, 50, 62] : [40, 58];
+      zonal.forEach((b, i) => {
+        const live = ps.find((p) => p.id === b.id)!;
+        live.x = zones[Math.min(i, zones.length - 1)]; live.y = 87;
+      });
+      if (presser) { const live = ps.find((p) => p.id === presser.id)!; live.x = 16; live.y = 76; }
+      let remainingMids = mids.filter((m) => m.id !== presser?.id);
+      // A one-CB shape (7v7 1-4-1): the deepest free mid drops in as the
+      // second zonal defender — the box is never defended by one player.
+      if (zonal.length < 2 && remainingMids.length) {
+        const helper = remainingMids[remainingMids.length - 1];
+        const live = ps.find((p) => p.id === helper.id)!;
+        live.x = zones.length > 1 ? 58 : 56; live.y = 87;
+        remainingMids = remainingMids.filter((m) => m.id !== helper.id);
+      }
+      const midSlots: [number, number][] = [[48, 74], [64, 69], [30, 68], [72, 64]];
+      remainingMids.forEach((m, i) => {
+        const live = ps.find((p) => p.id === m.id)!;
+        const slot = midSlots[Math.min(i, midSlots.length - 1)];
+        live.x = slot[0]; live.y = slot[1];                  // first owns the cutback zone
+      });
+      for (const p of ps) {
+        if (p.role === "AM" || p.role === "W") { p.y = 62; scaleX(p, 0.5); }
+        else if (p.role === "ST") { p.x = 50; p.y = 48; }    // the outlet
+        else if (p.role === "GK") p.y = 94;
+      }
+      return resolveCollisions(ps);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario choreography: the ball's story through each picture, plus the
+// order the lines move in. The explorer plays these as a live sequence —
+// waypoints resolve against the ACTUAL scenario positions of this formation,
+// so every one of the 20 shapes animates its own version of the movement.
+// ---------------------------------------------------------------------------
+
+export type WaveOrder = Role[][];
+
+export interface Choreo {
+  // each waypoint: role to anchor to (picked by preference order) or raw point
+  ball: ({ role: Role; pick: "left" | "right" | "center" | "high" } | { x: number; y: number })[];
+  waves: WaveOrder; // which lines move first, second, third
+}
+
+export const CHOREO: Partial<Record<ScenarioId, Choreo>> = {
+  buildup: {
+    ball: [{ role: "GK", pick: "center" }, { role: "CB", pick: "left" }, { role: "DM", pick: "center" }, { role: "CM", pick: "left" }, { role: "W", pick: "left" }, { role: "ST", pick: "center" }],
+    waves: [["GK", "CB", "FB"], ["DM", "CM"], ["AM", "W", "ST"]],
+  },
+  highpress: {
+    ball: [{ x: 50, y: 12 }, { x: 28, y: 16 }, { x: 16, y: 24 }],
+    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+  },
+  midblock: {
+    ball: [{ x: 50, y: 22 }, { x: 24, y: 28 }, { x: 76, y: 28 }, { x: 50, y: 20 }],
+    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+  },
+  lowblock: {
+    ball: [{ x: 72, y: 56 }, { x: 86, y: 70 }, { x: 55, y: 84 }, { role: "ST", pick: "center" }],
+    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+  },
+  attTransition: {
+    ball: [{ x: 46, y: 56 }, { role: "CM", pick: "center" }, { role: "W", pick: "right" }, { role: "ST", pick: "center" }],
+    waves: [["ST", "W"], ["AM", "CM"], ["FB", "DM", "CB", "GK"]],
+  },
+  defTransition: {
+    ball: [{ x: 50, y: 42 }],
+    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+  },
+  wideAttack: {
+    ball: [{ x: 50, y: 46 }, { role: "FB", pick: "right" }, { role: "W", pick: "right" }, { role: "AM", pick: "center" }, { x: 50, y: 6 }],
+    waves: [["CB", "FB", "GK"], ["DM", "CM"], ["AM", "W", "ST"]],
+  },
+  defCross: {
+    ball: [{ x: 12, y: 66 }, { x: 16, y: 76 }, { x: 44, y: 86 }, { x: 62, y: 60 }, { role: "ST", pick: "center" }],
+    waves: [["CB", "FB", "GK"], ["DM", "CM"], ["AM", "W", "ST"]],
+  },
+};
+
+// Resolve a choreography waypoint against the actual scenario positions.
+export function resolveBallPath(pieces: Piece[], c: Choreo): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const wp of c.ball) {
+    if ("x" in wp) { out.push({ x: wp.x, y: wp.y }); continue; }
+    const cands = pieces.filter((p) => p.role === wp.role);
+    if (!cands.length) continue; // formation lacks the role — skip the touch
+    let pickd = cands[0];
+    if (wp.pick === "left") pickd = cands.reduce((a, b) => (a.x < b.x ? a : b));
+    else if (wp.pick === "right") pickd = cands.reduce((a, b) => (a.x > b.x ? a : b));
+    else if (wp.pick === "high") pickd = cands.reduce((a, b) => (a.y < b.y ? a : b));
+    else pickd = cands.reduce((a, b) => (Math.abs(a.x - 50) < Math.abs(b.x - 50) ? a : b));
+    out.push({ x: pickd.x, y: pickd.y });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
