@@ -9,7 +9,7 @@ import { useEntitlements } from "../entitlements";
 const MATRIX: { feature: string; free: string; pro: string; club: string }[] = [
   { feature: "AI engine", free: "Light / Standard Tactical", pro: "🧠 Deep Tactical (flagship)", club: "🧠 Deep Tactical" },
   { feature: "Messages per day", free: "30", pro: "300", club: "300 / coach" },
-  { feature: "Coaching advisors", free: "Your staff of 3", pro: "All 15 + build your own", club: "All 15 + custom" },
+  { feature: "Coaching advisors", free: "Your staff of 3", pro: "All 16 + build your own", club: "All 16 + custom" },
   { feature: "Session Library", free: "5 unlocks / month", pro: "Unlimited", club: "Unlimited" },
   { feature: "Session Studio + animated diagrams", free: "✓", pro: "✓", club: "✓" },
   { feature: "Match Day: pre-game + debrief", free: "✓", pro: "✓", club: "✓" },
@@ -76,7 +76,7 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
               <><b>$14.99</b><span className="muted small"> /mo</span></>
             )}
           </div>
-          <p className="muted small">The flagship Deep Tactical engine on every output, all 15 advisors, unlimited Library and Film Room, Live Bench, season planner, up to 8 teams.</p>
+          <p className="muted small">The flagship Deep Tactical engine on every output, all 16 advisors, unlimited Library and Film Room, Live Bench, season planner, up to 8 teams.</p>
           <button className="btn" style={{ marginTop: "auto" }} disabled={busy || isPro} onClick={() => void checkout()}>
             {isPro ? "✓ You're Pro" : busy ? "One moment…" : `Go Pro — ${interval === "year" ? "$119.88/yr" : "$14.99/mo"}`}
           </button>

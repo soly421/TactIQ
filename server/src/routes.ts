@@ -173,9 +173,10 @@ api.delete("/advisors/custom/:id", (req, res) => {
 // ---- Advisor brainstorm chat (SSE) ----
 api.post("/chat", async (req, res) => {
   const userId = uid(req);
-  const { advisorId, messages } = req.body as {
+  const { advisorId, messages, secondOpinion } = req.body as {
     advisorId: string;
     messages: { role: "user" | "assistant"; content: string }[];
+    secondOpinion?: boolean;
   };
   const builtIn = getAdvisor(advisorId);
   const custom = getCustomAdvisors(userId).find((a) => a.id === advisorId);
@@ -192,14 +193,14 @@ api.post("/chat", async (req, res) => {
   if (builtIn) {
     const ent = entitlementsFor(planOf(userId));
     if (!signOrCheckAdvisor(userId, advisorId, ent.maxStaffAdvisors)) {
-      res.status(403).json(upgradeError(`Your staff is full (${ent.maxStaffAdvisors} advisors on the free plan). Upgrade to Pro to work with all 15 coaching minds.`));
+      res.status(403).json(upgradeError(`Your staff is full (${ent.maxStaffAdvisors} advisors on the free plan). Upgrade to Pro to work with all ${ADVISORS.length} coaching minds.`));
       return;
     }
   }
   const gamify = award(userId, "chat", advisorId);
   const system = builtIn
-    ? advisorSystemPrompt(builtIn, teamContext(userId))
-    : customAdvisorSystemPrompt(custom!, teamContext(userId));
+    ? advisorSystemPrompt(builtIn, teamContext(userId), Boolean(secondOpinion))
+    : customAdvisorSystemPrompt(custom!, teamContext(userId), Boolean(secondOpinion));
   const advisorName = builtIn?.name ?? custom!.name;
 
   await streamToSSE(res, {
@@ -214,7 +215,7 @@ api.post("/chat", async (req, res) => {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       addSeasonEntry(userId, {
         kind: "chat",
-        title: `Brainstorm with ${advisorName}`,
+        title: secondOpinion ? `Second opinion from ${advisorName}` : `Brainstorm with ${advisorName}`,
         summary: `Coach asked: "${snip(lastUser?.content ?? "", 110)}" — ${advisorName} advised: ${snip(fullText, 180)}`,
       });
     },
