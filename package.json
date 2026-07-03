@@ -2,7 +2,7 @@
   "name": "tactiq",
   "version": "0.1.0",
   "private": true,
-  "description": "TactIQ — AI tactical advisor and training-session designer for youth soccer coaches",
+  "description": "TactIQ \u2014 AI tactical advisor and training-session designer for youth soccer coaches",
   "workspaces": [
     "server",
     "client"
@@ -11,7 +11,8 @@
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "check:formations": "esbuild client/src/formations.ts --bundle --format=esm --outfile=checks/formations.bundle.mjs && node checks/check-geometry.mjs && node checks/validate-principles.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
