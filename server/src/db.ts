@@ -201,6 +201,9 @@ try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_customer_id TEXT"); } catch {
 try { db.exec("ALTER TABLE clubs ADD COLUMN stripe_subscription_id TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN teamsnap_token TEXT"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN active_team_id INTEGER"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN coach_role TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN referral TEXT DEFAULT ''"); } catch { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN zip TEXT DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE progress ADD COLUMN league INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE season_entries ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE schedule_events ADD COLUMN team_id INTEGER"); } catch { /* exists */ }

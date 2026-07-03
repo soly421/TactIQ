@@ -1,77 +1,7 @@
 import { useEffect, useState } from "react";
-import { getJSON, sendJSON, setToken } from "../api";
-import { PitchDiagram } from "../components/PitchDiagram";
-import type { SessionPlan, User } from "../types";
+import { sendJSON, setToken } from "../api";
+import type { User } from "../types";
 
-// Try-before-signup: the magic moment happens on this page, account second.
-function TryItFirst() {
-  const [form, setForm] = useState({ ageGroup: "U10", theme: "Pressing & winning the ball back" });
-  const [plan, setPlan] = useState<SessionPlan | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [live, setLive] = useState(true);
-
-  // This page sits outside the app shell, so it needs its own demo tell —
-  // a prospect must never mistake a canned sample for a generated session.
-  useEffect(() => {
-    void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
-  }, []);
-
-  async function generate() {
-    setBusy(true);
-    setError("");
-    try {
-      const r = await sendJSON<{ plan: SessionPlan }>("/api/try/session", form);
-      setPlan(r.plan);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Try again");
-    }
-    setBusy(false);
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <h3 style={{ marginTop: 0 }}>⚡ Try it before you sign up</h3>
-      <p className="muted small">Pick an age group and a theme — get a real animated session in seconds.</p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <select value={form.ageGroup} onChange={(e) => setForm((f) => ({ ...f, ageGroup: e.target.value }))}>
-          {["U8", "U10", "U12", "U14", "U16", "HS"].map((a) => <option key={a}>{a}</option>)}
-        </select>
-        <input
-          style={{ flex: 1, minWidth: 160 }}
-          value={form.theme}
-          onChange={(e) => setForm((f) => ({ ...f, theme: e.target.value }))}
-          placeholder="e.g. finishing, 1v1s, playing out of the back…"
-        />
-        <button className="btn" onClick={() => void generate()} disabled={busy}>
-          {busy ? "Designing…" : "Generate"}
-        </button>
-      </div>
-      {error && <div className="error-box">{error}</div>}
-      {plan && !live && (
-        <p className="small" style={{ margin: "10px 0 0", color: "var(--gold)" }}>
-          🧪 Demo server — this is a sample session, not one generated for your inputs.
-        </p>
-      )}
-      {plan && (
-        <div className="fade-in" style={{ marginTop: 14 }}>
-          <h3 style={{ marginBottom: 4 }}>{plan.title}</h3>
-          <p className="muted small">{plan.ageGroup} · {plan.durationMinutes} min · {plan.theme}</p>
-          {plan.drills.slice(0, 2).map((d, i) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <b>{d.name}</b> <span className="muted small">({d.durationMinutes} min)</span>
-              <p className="small" style={{ margin: "4px 0" }}>{d.organization}</p>
-              {d.diagram && <PitchDiagram diagram={d.diagram} />}
-            </div>
-          ))}
-          <p className="small" style={{ fontWeight: 600, color: "var(--accent)" }}>
-            + {Math.max(0, plan.drills.length - 2)} more exercises, coaching points, and progressions — create your free account to see the full session, save it, and build your team's memory.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function Auth({ onAuthed }: { onAuthed: (user: User) => void }) {
   const [mode, setMode] = useState<"login" | "register" | "forgot" | "reset">("register");
@@ -205,7 +135,17 @@ export function Auth({ onAuthed }: { onAuthed: (user: User) => void }) {
             Your team data stays private to your account. Player entries should use <b>first names or initials only</b> — TactIQ is built to work without any personal details about minors. Delete your account and all data anytime in My Team.
           </p>
         </div>
-        {mode === "register" && <TryItFirst />}
+        {mode === "register" && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <b className="small">Your free account includes:</b>
+            <ul className="points" style={{ margin: "8px 0 0" }}>
+              <li>An AI assistant coach that remembers your whole season — roster, results, sessions</li>
+              <li>Real training sessions with animated diagrams, built for your age group</li>
+              <li>The interactive Tactics Board: every formation, every scenario, engine reads on every move</li>
+              <li>Match Day prep and post-game debriefs, plus a staff of coaching minds to argue with</li>
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

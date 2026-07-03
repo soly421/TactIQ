@@ -180,6 +180,32 @@ export function getSeasonEntryById(userId: number, id: number): SeasonEntry | nu
   return r ? { ...r, payload: r.payload ? JSON.parse(r.payload) : undefined } : null;
 }
 
+// ---- coach profile (onboarding demographics) ----
+// Who is this coach? Collected once at first login; the role feeds tone
+// personalization in every prompt, referral feeds acquisition analytics,
+// ZIP feeds the club-density map. All optional, all adult-coach data.
+export interface CoachProfile {
+  coachRole: string;
+  referral: string;
+  zip: string;
+}
+
+export function setCoachProfile(userId: number, p: Partial<CoachProfile>): void {
+  db.prepare("UPDATE users SET coach_role = ?, referral = ?, zip = ? WHERE id = ?").run(
+    String(p.coachRole ?? "").slice(0, 30),
+    String(p.referral ?? "").slice(0, 40),
+    String(p.zip ?? "").replace(/[^0-9]/g, "").slice(0, 5),
+    userId,
+  );
+}
+
+export function getCoachProfile(userId: number): CoachProfile {
+  const r = db.prepare("SELECT coach_role, referral, zip FROM users WHERE id = ?").get(userId) as
+    | { coach_role: string | null; referral: string | null; zip: string | null }
+    | undefined;
+  return { coachRole: r?.coach_role ?? "", referral: r?.referral ?? "", zip: r?.zip ?? "" };
+}
+
 // ---- progress ----
 export function getProgress(userId: number): Progress {
   let row = db.prepare("SELECT * FROM progress WHERE user_id = ?").get(userId) as

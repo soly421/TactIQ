@@ -9,7 +9,7 @@ import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
-import { getSeasonEntryById, refundMessage, topAdvisorNames, setUserTz, userToday,
+import { setCoachProfile, getCoachProfile, getSeasonEntryById, refundMessage, topAdvisorNames, setUserTz, userToday,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
   activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
@@ -43,42 +43,6 @@ api.get("/health", (_req, res) => {
 // ---- Try-before-signup: one instant session, no account, cheapest tier ----
 // The Speak/Cursor lesson: deliver the magic moment BEFORE asking for signup.
 const tryCounts = new Map<string, { day: string; n: number }>();
-const TRY_PER_DAY = 3;
-
-api.post("/try/session", async (req, res) => {
-    const ip = req.ip ?? "?"; // trust-proxy resolves the real client — headers can't spoof the cap
-  const day = new Date().toISOString().slice(0, 10);
-  const entry = tryCounts.get(ip);
-  const n = entry?.day === day ? entry.n : 0;
-  if (n >= TRY_PER_DAY) {
-    res.status(429).json({ error: "Free preview limit reached for today — create a free account to keep going." });
-    return;
-  }
-  tryCounts.set(ip, { day, n: n + 1 });
-  if (tryCounts.size > 5000) tryCounts.clear(); // bounded memory
-
-  const { ageGroup, theme } = req.body ?? {};
-  if (!ageGroup || !theme) {
-    res.status(400).json({ error: "ageGroup and theme are required" });
-    return;
-  }
-  try {
-    const plan_ = await generateStructured<typeof MOCK_SESSION_PLAN>({
-      tier: "standard", // the first impression — never the weakest model; 3/IP/day bounds it
-      userId: 0, // unauthenticated preview — excluded from the per-user ledger
-      system: `${baseSystemPrompt()}
-
-You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid. Follow the arrival -> technical -> pressure -> game arc. This is a first-taste preview for a coach who hasn't signed up yet — make it genuinely excellent.`,
-      user: `Design a 75-minute training session for a ${ageGroup} team. Theme: ${theme}.`,
-      schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...mockSessionPlan(String(ageGroup), String(theme)), title: `${theme} (demo sample)` },
-    });
-    res.json({ plan: plan_, remaining: TRY_PER_DAY - n - 1 });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Generation failed — try again" });
-  }
-});
 
 // Everything below requires a signed-in coach.
 api.use(requireAuth);
@@ -1336,6 +1300,33 @@ Ground everything in the team memory above. No preamble, no sign-off.`,
   kvSet(key, text);
   return text;
 }
+
+// ---- Onboarding: who is this coach? Collected once, used everywhere ----
+const COACH_ROLES = ["head", "assistant", "parent", "director", "trainer"];
+const REFERRALS = ["coach", "club", "social", "search", "event", "other"];
+
+api.get("/onboarding", (req, res) => {
+  const userId = uid(req);
+  res.json({
+    completed: kvGet(`onboard:${userId}`) === "done",
+    hasTeam: Boolean(getSquad(userId)),
+    profile: getCoachProfile(userId),
+  });
+});
+
+api.post("/onboarding", (req, res) => {
+  const userId = uid(req);
+  const { coachRole, referral, zip, skipped } = req.body ?? {};
+  if (!skipped) {
+    setCoachProfile(userId, {
+      coachRole: COACH_ROLES.includes(String(coachRole)) ? String(coachRole) : "",
+      referral: REFERRALS.includes(String(referral)) ? String(referral) : "",
+      zip: String(zip ?? ""),
+    });
+  }
+  kvSet(`onboard:${userId}`, "done");
+  res.json({ ok: true });
+});
 
 // ---- Gamified progress ----
 api.get("/progress", (req, res) => {

@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { hasAnyProvider, RefusalError, streamText, structuredText, TIER_INFO, type Tier } from "./providers.js";
-import { getSeasonByKinds, clubThemeFor, feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
+import { getCoachProfile, getSeasonByKinds, clubThemeFor, feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
 import { weekStart } from "./community.js";
 
 // The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
@@ -66,7 +66,11 @@ export function teamContext(userId: number): string {
 <team_memory>
 This coach's team (use it — make every answer specific to THIS team):
 - Team: ${s.teamName} (${s.ageGroup}, ${s.format}, ${s.level} level)
-- Coach experience level: ${s.coachExperience || "intermediate"} (adapt your language per <coach_experience_adaptation>)
+- Coach experience level: ${s.coachExperience || "intermediate"} (adapt your language per <coach_experience_adaptation>)${(() => {
+    const roleWords: Record<string, string> = { head: "the head coach", assistant: "an assistant coach", parent: "a volunteer parent-coach — keep setups simple and jargon-free", director: "the club's director of coaching — comfortable with program-level thinking", trainer: "a private trainer" };
+    const r = getCoachProfile(userId).coachRole;
+    return roleWords[r] ? `\n- Who you're talking to: ${roleWords[r]}` : "";
+  })()}
 - Preferred style: ${s.preferredStyle || "not specified"}
 - Roster notes: ${s.rosterNotes || "none"}
 - Season goals: ${s.seasonGoals || "none"}

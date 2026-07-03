@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GamifyProvider, useGamify } from "./components/Gamify";
 import { getJSON, getToken, sendJSON, setToken } from "./api";
 import { setPlansScope } from "./savedPlans";
+import { Onboarding } from "./components/Onboarding";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
@@ -112,6 +113,9 @@ function TopBar() {
 function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [tab, setTab] = useState("home");
   const [live, setLive] = useState(true);
+  // First login: the two-step onboarding runs before the app — who the coach
+  // is, then their team. Skippable; never shown again once answered.
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
     void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
@@ -119,6 +123,9 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
     // UTC offset so streaks/quests/caps reset on the coach's day, not UTC's.
     setPlansScope(user.id);
     void sendJSON("/api/tz", { offset: -new Date().getTimezoneOffset() }).catch(() => {});
+    void getJSON<{ completed: boolean; hasTeam: boolean }>("/api/onboarding")
+      .then((r) => setNeedsOnboarding(!r.completed && !r.hasTeam))
+      .catch(() => setNeedsOnboarding(false));
     const openPricing = () => setTab("pricing");
     window.addEventListener("tactiq:pricing", openPricing);
     return () => window.removeEventListener("tactiq:pricing", openPricing);
@@ -144,6 +151,9 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
 
       <main className="content">
         <TopBar />
+        {needsOnboarding && <Onboarding onDone={() => setNeedsOnboarding(false)} />}
+        {needsOnboarding !== false ? null : (
+        <>
         {!live && (
           <div className="demo-banner no-print">
             🧪 <b>Demo mode</b> — no <code>ANTHROPIC_API_KEY</code> is set on the server, so all outputs are canned samples and will NOT match your inputs.
@@ -160,6 +170,8 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "community" && <Community user={user} />}
         {tab === "privacy" && <Privacy />}
         {tab === "pricing" && <Pricing go={setTab} />}
+        </>
+        )}
       </main>
     </div>
   );
