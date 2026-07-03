@@ -105,6 +105,9 @@ export function Community() {
                 <div><div className="v-num">#{data.recap.weeklyRank}</div><div className="muted small">League rank</div></div>
                 <div><div className="v-num">🔥 {data.streak.current}</div><div className="muted small">Streak</div></div>
               </div>
+              <p className="muted small" style={{ margin: "10px 0 0" }}>
+                Season so far: {data.recap.sessions} session{data.recap.sessions === 1 ? "" : "s"} · {data.recap.matchdays} match day{data.recap.matchdays === 1 ? "" : "s"} · {data.recap.chats} chat{data.recap.chats === 1 ? "" : "s"} · {data.recap.ratings} rating{data.recap.ratings === 1 ? "" : "s"}
+              </p>
               <p className="small" style={{ margin: "10px 0 0", color: data.streak.freezeAvailable ? "var(--turquoise)" : "var(--muted)" }}>
                 {data.streak.freezeAvailable
                   ? "🧊 Streak freeze ready — miss one day this week and your flame survives."

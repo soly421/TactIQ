@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { streamSSE } from "../api";
+import { useEffect, useState } from "react";
+import { getJSON, streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
 import { RateBar } from "../components/RateBar";
@@ -23,6 +23,16 @@ export function Playbook() {
   const [answer, setAnswer] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
+
+  // Age and level come from the saved team profile — asked once, in My Team.
+  useEffect(() => {
+    void getJSON<{ squad: { ageGroup?: string; level?: string } | null }>("/api/team")
+      .then((r) => {
+        if (!r.squad?.ageGroup) return;
+        setForm((f) => ({ ...f, ageGroup: r.squad!.ageGroup ?? f.ageGroup, level: r.squad!.level ?? f.level }));
+      })
+      .catch(() => {});
+  }, []);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 

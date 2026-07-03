@@ -3,16 +3,16 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { ADVISORS, advisorSystemPrompt, assistantSystemPrompt, customAdvisorSystemPrompt, getAdvisor } from "./personas.js";
 import { baseSystemPrompt } from "./knowledge.js";
 import { SESSION_PLAN_SCHEMA, FORMATION_ANALYSIS_SCHEMA, GAME_PLAN_SCHEMA, SEASON_PLAN_SCHEMA } from "./schemas.js";
-import { generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
+import { bandFor as bandForAgeServer, generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
 import { streamText } from "./providers.js";
 import {
-  MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE,
+  MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
-import {
+import { setUserTz, userToday,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, leaderboard, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
+  activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor, streakFreezeAvailable } from "./gamification.js";
@@ -24,17 +24,6 @@ import { stripeConfigured } from "./billing.js";
 import { maybeResyncIcs } from "./schedule.js";
 
 // "U11" -> "U11-U12" (server twin of the client bandForAge)
-function bandForAgeServer(ageGroup: string): string {
-  if (/hs|high/i.test(ageGroup)) return "HS";
-  const n = Number(/\d+/.exec(ageGroup)?.[0]);
-  if (!n) return "U11-U12";
-  if (n <= 8) return "U6-U8";
-  if (n <= 10) return "U9-U10";
-  if (n <= 12) return "U11-U12";
-  if (n <= 14) return "U13-U14";
-  if (n <= 16) return "U15-U16";
-  return "HS";
-}
 import { bumpMonthly, entitlementsFor, getStaff, monthlyCount, signOrCheckAdvisor, upgradeError } from "./entitlements.js";
 import { SCHOOLS, SESSION_TEMPLATES, getTemplate } from "./library.js";
 
@@ -82,7 +71,7 @@ api.post("/try/session", async (req, res) => {
 You design world-class youth training sessions. Every drill must include a renderable diagram on a 100x100 grid. Follow the arrival -> technical -> pressure -> game arc. This is a first-taste preview for a coach who hasn't signed up yet — make it genuinely excellent.`,
       user: `Design a 75-minute training session for a ${ageGroup} team. Theme: ${theme}.`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...MOCK_SESSION_PLAN, title: `${theme} (demo sample)` },
+      mock: { ...mockSessionPlan(String(ageGroup), String(theme)), title: `${theme} (demo sample)` },
     });
     res.json({ plan: plan_, remaining: TRY_PER_DAY - n - 1 });
   } catch (err) {
@@ -119,7 +108,7 @@ function consumeMessage(userId: number): { ok: boolean; remaining: number } {
 const STRUCTURED_PER_DAY: Record<Plan, number> = { free: 10, pro: 150 };
 
 function consumeStructured(userId: number): boolean {
-  const day = new Date().toISOString().slice(0, 10);
+  const day = userToday(userId);
   const key = `structcap:${userId}:${day}`;
   const used = Number(kvGet(key) ?? 0);
   if (used >= STRUCTURED_PER_DAY[planOf(userId)]) return false;
@@ -301,7 +290,7 @@ You design world-class youth training sessions. Every drill must include a rende
 - Team level: ${level || "recreational travel"}
 - Extra notes: ${notes || "none"}`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...MOCK_SESSION_PLAN, title: `${MOCK_SESSION_PLAN.title} (demo sample)` },
+      mock: { ...mockSessionPlan(ageGroup, theme, Number(durationMinutes)), title: `${MOCK_SESSION_PLAN.title} (demo sample)` },
     });
 
     const gamify = award(userId, "session");
@@ -378,7 +367,7 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
 - Season focus (coach's words): ${focus || "overall development with the team's preferred style"}`,
       schema: SEASON_PLAN_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 20000,
-      mock: { ...MOCK_SEASON_PLAN, title: `${MOCK_SEASON_PLAN.title} (demo sample)` },
+      mock: { ...MOCK_SEASON_PLAN, title: `${MOCK_SEASON_PLAN.title} (demo sample)`, ageGroup: squad?.ageGroup ?? MOCK_SEASON_PLAN.ageGroup },
     });
     const gamify = award(userId, "session");
     const entryId = addSeasonEntry(userId, { kind: "session", title: `Season plan: ${plan_.title}`, summary: `${plan_.weeks.length} weeks`, payload: plan_ });
@@ -459,9 +448,11 @@ Give it a specific, evocative title of your own (not the catalog label).`,
 api.post("/formation", async (req, res) => {
   const userId = uid(req);
   const { format, ageGroup, style, squadNotes, opponentNotes, depth } = req.body ?? {};
-  const fDepth = depth === "deep" ? "deep" : depth === "quick" ? "light" : null;
-  if (fDepth && fDepth !== "light" && planOf(userId) === "free") {
-    res.status(403).json(upgradeError("Deep Tactical analysis (the flagship engine) is a Pro feature."));
+  const fDepth = depth === "deep" ? "deep" : depth === "standard" ? "standard" : "light";
+  if (fDepth !== "light" && planOf(userId) === "free") {
+    res.status(403).json(upgradeError(fDepth === "deep"
+      ? "Deep Tactical analysis (the flagship engine) is a Pro feature."
+      : "Standard Tactical analysis is a Pro feature — free coaches get Quick reads."));
     return;
   }
   if (!format || !ageGroup) {
@@ -474,7 +465,7 @@ api.post("/formation", async (req, res) => {
   }
   try {
     const analysis = await generateStructured<typeof MOCK_FORMATION>({
-      tier: fDepth ?? tierFor(planOf(userId), "structured"),
+      tier: fDepth,
       userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
@@ -487,7 +478,7 @@ You recommend formations and game models for youth teams. Positions are placed o
 - Opponent/league context: ${opponentNotes || "none"}`,
       schema: FORMATION_ANALYSIS_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 16000,
-      mock: MOCK_FORMATION,
+      mock: mockFormation(String(format)),
     });
 
     const gamify = award(userId, "formation");
@@ -689,7 +680,10 @@ api.post("/feedback", (req, res) => {
     return;
   }
   addFeedback(userId, { entryId: entryId ?? null, kind: String(kind ?? "output").slice(0, 30), vote, note });
-  const gamify = award(userId, "rate");
+  // A "-note" kind is the optional comment following a thumbs-down the coach
+  // already submitted — one rating, one award.
+  const isFollowUpNote = String(kind ?? "").endsWith("-note");
+  const gamify = isFollowUpNote ? null : award(userId, "rate");
   res.json({ ok: true, award: gamify, totalRatings: feedbackCount(userId) });
 });
 
@@ -901,7 +895,7 @@ const BOARD_VERDICT_SCHEMA = {
 
 api.post("/board/move", async (req, res) => {
   const userId = uid(req);
-  const day = new Date().toISOString().slice(0, 10);
+  const day = userToday(userId);
   const key = `boardcap:${userId}:${day}`;
   const used = Number(kvGet(key) ?? 0);
   if (used >= BOARD_READS_PER_DAY[planOf(userId)]) {
@@ -953,12 +947,21 @@ ${question
       schema: BOARD_VERDICT_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 500,
       mock: {
-        headline: "Bold — you've traded cover for control (demo read)",
+        headline: question
+          ? `Demo read — with a live engine key this answers your exact question against this board`
+          : `${String(move).split(" ")[0]}: bold — cover traded for control (demo read)`,
         gains: ["Extra man ahead of the ball in build-up", "Their pivot now has two problems to mark"],
         risks: ["The vacated zone is open for their counter", "Back line must shift across to cover"],
         counterMove: "Drop the near-side midfielder one line to screen the gap.",
       },
     });
+    if (question) {
+      addSeasonEntry(userId, {
+        kind: "formation",
+        title: `Board question — ${formation} (${scenario})`,
+        summary: `Coach asked: "${snip(String(question), 110)}" — engine: ${snip(verdict.headline, 140)}`,
+      });
+    }
     const gamify = award(userId, "board");
     res.json({ verdict, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
   } catch (err) {
@@ -1129,7 +1132,7 @@ async function dailyBriefing(
     suggestion: { theme: string; reason: string };
   },
 ): Promise<string> {
-  const day = new Date().toISOString().slice(0, 10);
+  const day = userToday(userId);
   const key = `brief:${userId}:${activeTeamId(userId) ?? 0}:${day}:${hasAnyProvider() ? "live" : "demo"}`;
   const cached = kvGet(key);
   if (cached) return cached;
@@ -1155,6 +1158,14 @@ async function dailyBriefing(
   return text;
 }
 
+// The client reports its UTC offset so every daily boundary (streaks,
+// quests, caps, briefings, schedule windows) follows the coach's clock.
+api.post("/tz", (req, res) => {
+  const offset = Number(req.body?.offset);
+  if (Number.isFinite(offset)) setUserTz(uid(req), offset);
+  res.json({ ok: true });
+});
+
 // ---- Gamified progress ----
 api.get("/progress", (req, res) => {
   const userId = uid(req);
@@ -1178,6 +1189,5 @@ api.get("/progress", (req, res) => {
       earned: p.badges.includes(b.id),
     })),
     usage: { used: getUsage(userId), limit: dailyLimit(userId) },
-    leaderboard: leaderboard(userId),
   });
 });

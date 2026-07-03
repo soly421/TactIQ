@@ -1,4 +1,5 @@
-import { db, today } from "./db.js";
+import { db } from "./db.js";
+import { userToday } from "./store.js";
 import type { XpAction } from "./gamification.js";
 
 export interface QuestDef {
@@ -22,9 +23,10 @@ const QUEST_POOL: QuestDef[] = [
   { id: "film-1", title: "Break down a clip in the Film Room", emoji: "🎞️", action: "film", target: 1, bonusXp: 40 },
 ];
 
-// Deterministic 3 quests per day (same for everyone — feels like a shared daily).
-export function questsForToday(): QuestDef[] {
-  const d = today();
+// Deterministic 3 quests per day, seeded by the coach's LOCAL day so the set
+// never reshuffles mid-evening when UTC rolls over.
+export function questsForToday(userId: number): QuestDef[] {
+  const d = userToday(userId);
   const seed = [...d].reduce((a, c) => a + c.charCodeAt(0), 0);
   const picks: QuestDef[] = [];
   for (let i = 0; picks.length < 3 && i < QUEST_POOL.length * 3; i++) {
@@ -40,8 +42,8 @@ export interface QuestState extends QuestDef {
 }
 
 export function questState(userId: number): QuestState[] {
-  const d = today();
-  return questsForToday().map((q) => {
+  const d = userToday(userId);
+  return questsForToday(userId).map((q) => {
     const row = db
       .prepare("SELECT progress, done FROM quest_log WHERE user_id = ? AND day = ? AND quest_id = ?")
       .get(userId, d, q.id) as { progress: number; done: number } | undefined;
@@ -51,9 +53,9 @@ export function questState(userId: number): QuestState[] {
 
 // Called from award(): bump matching quests; return completed quests (for bonus XP).
 export function recordQuestProgress(userId: number, action: XpAction): QuestDef[] {
-  const d = today();
+  const d = userToday(userId);
   const completed: QuestDef[] = [];
-  for (const q of questsForToday()) {
+  for (const q of questsForToday(userId)) {
     if (q.action !== action) continue;
     db.prepare(
       "INSERT INTO quest_log (user_id, day, quest_id, progress) VALUES (?, ?, ?, 1) ON CONFLICT(user_id, day, quest_id) DO UPDATE SET progress = progress + 1",

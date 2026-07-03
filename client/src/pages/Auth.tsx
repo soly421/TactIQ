@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { sendJSON, setToken } from "../api";
+import { getJSON, sendJSON, setToken } from "../api";
 import { PitchDiagram } from "../components/PitchDiagram";
 import type { SessionPlan, User } from "../types";
 
@@ -9,6 +9,13 @@ function TryItFirst() {
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [live, setLive] = useState(true);
+
+  // This page sits outside the app shell, so it needs its own demo tell —
+  // a prospect must never mistake a canned sample for a generated session.
+  useEffect(() => {
+    void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
+  }, []);
 
   async function generate() {
     setBusy(true);
@@ -41,6 +48,11 @@ function TryItFirst() {
         </button>
       </div>
       {error && <div className="error-box">{error}</div>}
+      {plan && !live && (
+        <p className="small" style={{ margin: "10px 0 0", color: "var(--gold)" }}>
+          🧪 Demo server — this is a sample session, not one generated for your inputs.
+        </p>
+      )}
       {plan && (
         <div className="fade-in" style={{ marginTop: 14 }}>
           <h3 style={{ marginBottom: 4 }}>{plan.title}</h3>

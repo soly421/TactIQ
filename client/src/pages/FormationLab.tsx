@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { sendJSON } from "../api";
+import { useEffect, useState } from "react";
+import { getJSON, sendJSON } from "../api";
+import { formatForAge, NO_FORMATION_NOTE } from "../age";
 import { FormationPitch } from "../components/FormationPitch";
 import { useGamify } from "../components/Gamify";
 import { RateBar } from "../components/RateBar";
-import type { AwardResult, FormationAnalysis } from "../types";
+import type { AwardResult, FormationAnalysis, SquadProfile } from "../types";
 
 export function FormationLab() {
   const { celebrate } = useGamify();
@@ -20,7 +21,37 @@ export function FormationLab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  // The lab knows your team: age + style come from the saved profile, and the
+  // format is derived from age (US Soccer standard), never asked twice.
+  useEffect(() => {
+    void getJSON<{ squad: SquadProfile | null }>("/api/team")
+      .then((r) => {
+        if (!r.squad?.ageGroup) return;
+        const derived = formatForAge(r.squad.ageGroup);
+        setForm((f) => ({
+          ...f,
+          ageGroup: r.squad!.ageGroup,
+          // 4v4 ages get the 7v7 board to prepare for what's next
+          format: derived ? (derived === "4v4" ? "7v7" : derived) : ["7v7", "9v9", "11v11"].includes(r.squad!.format) ? r.squad!.format : f.format,
+          style: f.style || r.squad!.preferredStyle || "",
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Age drives format automatically; the coach can still override the format
+  // select afterwards for leagues that deviate from the standard.
+  const set = (k: string, v: string) =>
+    setForm((f) => {
+      const next = { ...f, [k]: v };
+      if (k === "ageGroup") {
+        const derived = formatForAge(v);
+        if (derived) next.format = derived === "4v4" ? "7v7" : derived;
+      }
+      return next;
+    });
+
+  const smallSided = formatForAge(form.ageGroup) === "4v4";
 
   async function generate() {
     setError("");
@@ -42,17 +73,16 @@ export function FormationLab() {
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="form-grid">
           <label className="field">
-            Game format
+            Age group
+            <input value={form.ageGroup} onChange={(e) => set("ageGroup", e.target.value)} placeholder="e.g. U11" />
+          </label>
+          <label className="field">
+            Game format <span className="muted small">(set by age — override if your league differs)</span>
             <select value={form.format} onChange={(e) => set("format", e.target.value)}>
-              <option>4v4</option>
               <option>7v7</option>
               <option>9v9</option>
               <option>11v11</option>
             </select>
-          </label>
-          <label className="field">
-            Age group
-            <input value={form.ageGroup} onChange={(e) => set("ageGroup", e.target.value)} placeholder="e.g. U11" />
           </label>
           <label className="field">
             Analysis depth
@@ -83,6 +113,9 @@ export function FormationLab() {
             onChange={(e) => set("opponentNotes", e.target.value)}
           />
         </label>
+        {smallSided && (
+          <p className="muted small" style={{ marginTop: 0 }}>⚽ {NO_FORMATION_NOTE}</p>
+        )}
         <button className="btn" onClick={() => void generate()} disabled={loading}>
           {loading ? "Analyzing…" : "🔬 Analyze Formation"}
         </button>

@@ -95,8 +95,8 @@ function SessionScan() {
           {image && <img src={image} alt="sketch" style={{ height: 72, borderRadius: 8, border: "1px solid var(--border)" }} />}
         </div>
         <label className="field" style={{ marginBottom: 14 }}>
-          Anything the sketch doesn't show? (age group, duration, focus)
-          <input value={notes} placeholder="e.g. U12 travel, 90 minutes" onChange={(e) => setNotes(e.target.value)} />
+          Anything the sketch doesn't show? <span className="muted">Your team profile (age, level) is applied automatically.</span>
+          <input value={notes} placeholder="e.g. 90 minutes, focus on the weak-foot pattern" onChange={(e) => setNotes(e.target.value)} />
         </label>
         <button className="btn" onClick={() => void scan()} disabled={!image || loading}>
           {loading ? "Reading your sketch…" : "⚡ Digitize Session"}

@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { hasAnyProvider, RefusalError, streamText, structuredText, TIER_INFO, type Tier } from "./providers.js";
-import { clubThemeFor, feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
+import { getSeasonByKinds, clubThemeFor, feedbackDigest, getSeason, getSquad, getUserClub, upcomingEvents } from "./store.js";
 import { weekStart } from "./community.js";
 
 // The coach's 👍/👎 ratings on past outputs, turned into a preference signal.
@@ -19,7 +19,7 @@ ${liked ? `Liked:\n${liked}` : ""}${liked && disliked ? "\n" : ""}${disliked ? `
 </coach_preferences>`;
 }
 
-function bandFor(ageGroup: string): string {
+export function bandFor(ageGroup: string): string {
   if (/hs|high/i.test(ageGroup)) return "HS";
   const n = Number(/\d+/.exec(ageGroup)?.[0]);
   if (!n) return "U11-U12";
@@ -45,11 +45,11 @@ export function teamContext(userId: number): string {
     .filter((p) => p.name)
     .map((p) => `  - ${p.name}${p.number ? ` (#${p.number})` : ""} | positions: ${p.positions || "?"} | foot: ${p.foot || "?"} | ${p.notes || ""}`)
     .join("\n");
-  // Structured season memory: per-category windows so a burst of chats can't
-  // push game history or training history out of the context.
-  const all = getSeason(userId, 60);
+  // Structured season memory: per-category windows, each with its own SQL
+  // LIMIT, so a burst of chats can't push game or training history out of
+  // the context no matter how many total entries exist.
   const line = (e: { date: string; title: string; summary: string }) => `  - [${e.date.slice(0, 10)}] ${e.title} — ${e.summary}`;
-  const take = (kinds: string[], n: number) => all.filter((e) => kinds.includes(e.kind)).slice(0, n).map(line).join("\n");
+  const take = (kinds: string[], n: number) => getSeasonByKinds(userId, kinds, n).map(line).join("\n");
   const matches = take(["match"], 5);
   const sessions = take(["session"], 6);
   const labs = take(["formation", "film"], 4);

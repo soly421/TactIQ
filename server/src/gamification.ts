@@ -1,4 +1,4 @@
-import { getProgress, kvGet, kvSet, pushXpHistory, saveProgress, today, type Progress } from "./store.js";
+import { getProgress, kvGet, kvSet, pushXpHistory, saveProgress, userToday, type Progress } from "./store.js";
 import { recordQuestProgress, type QuestDef } from "./quests.js";
 import { weekStart } from "./community.js";
 
@@ -87,10 +87,10 @@ export function award(userId: number, action: XpAction, advisorId?: string): Awa
   const p = getProgress(userId);
   const before = levelFor(p.xp).level;
 
-  const t = today();
+  const t = userToday(userId);
   if (p.lastActiveDay !== t) {
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-    const dayBefore = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+    const yesterday = userToday(userId, -1);
+    const dayBefore = userToday(userId, -2);
     if (p.lastActiveDay === yesterday) {
       p.streak += 1;
     } else if (p.lastActiveDay === dayBefore && streakFreezeAvailable(userId)) {

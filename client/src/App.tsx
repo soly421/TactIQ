@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GamifyProvider, useGamify } from "./components/Gamify";
 import { getJSON, getToken, sendJSON, setToken } from "./api";
+import { setPlansScope } from "./savedPlans";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Chat } from "./pages/Chat";
@@ -118,10 +119,14 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
 
   useEffect(() => {
     void getJSON<{ live: boolean }>("/api/health").then((h) => setLive(h.live)).catch(() => {});
+    // Scope the offline session stash to this coach, and report the browser's
+    // UTC offset so streaks/quests/caps reset on the coach's day, not UTC's.
+    setPlansScope(user.id);
+    void sendJSON("/api/tz", { offset: -new Date().getTimezoneOffset() }).catch(() => {});
     const openPricing = () => setTab("pricing");
     window.addEventListener("tactiq:pricing", openPricing);
     return () => window.removeEventListener("tactiq:pricing", openPricing);
-  }, []);
+  }, [user.id]);
 
   return (
     <div className="layout">

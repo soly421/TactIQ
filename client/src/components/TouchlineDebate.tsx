@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
+import { useGamify } from "./Gamify";
+import type { AwardResult } from "../types";
 
 interface DebateData {
   debate: { id: string; scenario: string; options: { id: string; label: string }[] };
@@ -13,6 +15,7 @@ interface DebateData {
 // The Touchline Debate: one dilemma a week, tap to vote, see the split,
 // verdict drops Saturday. Structured voting = social with zero moderation.
 export function TouchlineDebate() {
+  const { celebrate } = useGamify();
   const [d, setD] = useState<DebateData | null>(null);
   useEffect(() => {
     void getJSON<DebateData>("/api/debate").then(setD).catch(() => {});
@@ -21,8 +24,10 @@ export function TouchlineDebate() {
   const total = Math.max(1, d.voteCount);
 
   async function vote(choice: string) {
-    const r = await sendJSON<DebateData>("/api/debate/vote", { choice });
+    // first vote earns +10 XP — the toast/confetti must actually fire
+    const r = await sendJSON<DebateData & { award: AwardResult | null }>("/api/debate/vote", { choice });
     setD(r);
+    if (r.award) celebrate(r.award);
   }
 
   return (

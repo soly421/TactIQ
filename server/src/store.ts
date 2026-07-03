@@ -139,6 +139,20 @@ export function getSeason(userId: number, limit = 100): SeasonEntry[] {
   return rows.map((r) => ({ ...r, payload: r.payload ? JSON.parse(r.payload) : undefined }));
 }
 
+// Per-kind season window: each memory category gets its own LIMIT in SQL, so
+// a burst of chat entries can never push game or training history out of the
+// AI's context — the guarantee teamContext depends on.
+export function getSeasonByKinds(userId: number, kinds: string[], limit: number): SeasonEntry[] {
+  const teamId = activeTeamId(userId);
+  const marks = kinds.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT id, date, kind, title, summary, payload FROM season_entries WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) AND kind IN (${marks}) ORDER BY id DESC LIMIT ?`,
+    )
+    .all(userId, teamId ?? -1, ...kinds, limit) as { id: number; date: string; kind: SeasonEntry["kind"]; title: string; summary: string; payload: string | null }[];
+  return rows.map((r) => ({ ...r, payload: r.payload ? JSON.parse(r.payload) : undefined }));
+}
+
 // ---- progress ----
 export function getProgress(userId: number): Progress {
   let row = db.prepare("SELECT * FROM progress WHERE user_id = ?").get(userId) as
@@ -178,13 +192,13 @@ export function getXpHistory(userId: number, limit = 60): { t: string; xp: numbe
 export function xpAtStartOfToday(userId: number): number {
   const row = db
     .prepare("SELECT xp FROM xp_history WHERE user_id = ? AND t < ? ORDER BY id DESC LIMIT 1")
-    .get(userId, `${today()} 00:00:00`) as { xp: number } | undefined;
+    .get(userId, `${userToday(userId)} 00:00:00`) as { xp: number } | undefined;
   return row?.xp ?? 0;
 }
 
 // ---- usage ----
 export function getUsage(userId: number): number {
-  const row = db.prepare("SELECT messages FROM usage_daily WHERE user_id = ? AND day = ?").get(userId, today()) as
+  const row = db.prepare("SELECT messages FROM usage_daily WHERE user_id = ? AND day = ?").get(userId, userToday(userId)) as
     | { messages: number }
     | undefined;
   return row?.messages ?? 0;
@@ -193,7 +207,7 @@ export function getUsage(userId: number): number {
 export function incrementUsage(userId: number): void {
   db.prepare(
     "INSERT INTO usage_daily (user_id, day, messages) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET messages = messages + 1",
-  ).run(userId, today());
+  ).run(userId, userToday(userId));
 }
 
 // ---- custom advisors ----
@@ -417,13 +431,19 @@ export function deleteScheduleEvent(userId: number, id: number): void {
 
 export function upcomingEvents(userId: number, days = 14): ScheduleEvent[] {
   const teamId = activeTeamId(userId);
+  // start is a floating local wall-clock string, so it must be compared
+  // against the coach's local now (with a 2h grace for events in progress),
+  // never against server UTC.
+  const localNow = new Date(Date.now() + tzOffsetMinutes(userId) * 60_000);
+  const from = new Date(localNow.getTime() - 2 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+  const to = new Date(localNow.getTime() + days * 86_400_000).toISOString().slice(0, 16).replace("T", " ");
   return db
     .prepare(
       `SELECT id, start, title, kind, opponent, location, source FROM schedule_events
-       WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) AND start >= datetime('now', '-6 hours') AND start <= datetime('now', '+' || ? || ' days')
+       WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) AND start >= ? AND start <= ?
        ORDER BY start ASC LIMIT 40`,
     )
-    .all(userId, teamId ?? -1, days) as ScheduleEvent[];
+    .all(userId, teamId ?? -1, from, to) as ScheduleEvent[];
 }
 
 export function setTeamSnapToken(userId: number, token: string | null): void {
@@ -466,6 +486,30 @@ export function clubThemeFor(clubId: number, weekStartStr: string, ageBand: stri
 }
 
 // ---- kv (scheduler state) ----
+// ---- timezone: day boundaries follow the coach's clock, not UTC ----
+// The client reports its UTC offset (minutes east) once per session; every
+// daily boundary — streaks, quests, caps, briefings, "upcoming" — uses it.
+// A US-Eastern coach's day must not flip at 7pm local.
+export function setUserTz(userId: number, offsetMinutes: number): void {
+  const v = Math.max(-840, Math.min(840, Math.round(offsetMinutes)));
+  kvSet(`tz:${userId}`, String(v));
+}
+
+export function tzOffsetMinutes(userId: number): number {
+  const v = Number(kvGet(`tz:${userId}`));
+  return Number.isFinite(v) ? v : 0;
+}
+
+export function userToday(userId: number, deltaDays = 0): string {
+  return new Date(Date.now() + tzOffsetMinutes(userId) * 60_000 + deltaDays * 86_400_000).toISOString().slice(0, 10);
+}
+
+// The coach's local wall-clock "now" as "YYYY-MM-DD HH:MM" — comparable
+// lexicographically against schedule_events.start (stored as floating local).
+export function userLocalNow(userId: number): string {
+  return new Date(Date.now() + tzOffsetMinutes(userId) * 60_000).toISOString().slice(0, 16).replace("T", " ");
+}
+
 export function kvGet(k: string): string | null {
   const row = db.prepare("SELECT v FROM kv WHERE k = ?").get(k) as { v: string } | undefined;
   return row?.v ?? null;

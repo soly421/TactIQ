@@ -111,9 +111,9 @@ function WeekStrip({ home, go }: { home: HomeData; go: (tab: string) => void }) 
                 <div className="wk-title">{game ? `vs ${game.opponent || "TBD"}` : main.title}</div>
                 <button
                   className="wk-action"
-                  onClick={() => go(game ? "matchday" : "studio")}
+                  onClick={() => go(game ? "matchday" : practice ? "studio" : "team")}
                 >
-                  {game ? "Game plan →" : practice ? "Plan session →" : "Details"}
+                  {game ? "Game plan →" : practice ? "Plan session →" : "Schedule →"}
                 </button>
               </>
             ) : (

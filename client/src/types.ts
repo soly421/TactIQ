@@ -100,7 +100,6 @@ export interface Progress {
   quests: Quest[];
   badges: Badge[];
   usage: { used: number; limit: number };
-  leaderboard: { rank: number; name: string; xp: number; you?: boolean }[];
 }
 
 export interface PlayerNote {
@@ -145,7 +144,7 @@ export interface SquadProfile {
 }
 
 export interface SeasonEntry {
-  id: string;
+  id: number;
   date: string;
   kind: "session" | "formation" | "guidance" | "chat" | "match" | "film";
   title: string;

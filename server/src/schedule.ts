@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import {
+import { activeTeamId,
   addScheduleEvent, deleteScheduleEvent, getSquad, getTeamSnapToken, kvGet, kvSet,
   replaceScheduleEvents, saveSquad, setTeamSnapToken, upcomingEvents, type ScheduleEvent,
 } from "./store.js";
@@ -84,7 +84,7 @@ export async function syncIcs(userId: number): Promise<{ imported: number } | { 
       return { start: e.start, title: e.title, kind: c.kind, opponent: c.opponent, location: e.location };
     });
     const imported = replaceScheduleEvents(userId, "ics", events);
-    kvSet(`icsSync:${userId}`, new Date().toISOString());
+    kvSet(`icsSync:${userId}:${activeTeamId(userId) ?? 0}`, new Date().toISOString());
     return { imported };
   } catch (err) {
     console.error("ics sync error", err);
@@ -96,7 +96,9 @@ export async function syncIcs(userId: number): Promise<{ imported: number } | { 
 export async function maybeResyncIcs(userId: number): Promise<void> {
   const squad = getSquad(userId);
   if (!squad?.icsUrl) return;
-  const last = kvGet(`icsSync:${userId}`);
+  // Throttle per TEAM: switching to a second team must not skip its sync
+  // just because the first team synced recently.
+  const last = kvGet(`icsSync:${userId}:${activeTeamId(userId) ?? 0}`);
   if (last && Date.now() - new Date(last).getTime() < 6 * 3600_000) return;
   await syncIcs(userId);
 }

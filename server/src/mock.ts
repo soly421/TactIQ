@@ -48,7 +48,7 @@ export const MOCK_SESSION_PLAN = {
     {
       name: "Through the Gates",
       phase: "technical",
-      durationMinutes: 15,
+      durationMinutes: 20,
       area: "30x25 yards",
       organization:
         "Pairs pass through scattered cone gates. One point per gate. On 'switch', find a NEW gate — heads up, scan before receiving.",
@@ -79,7 +79,7 @@ export const MOCK_SESSION_PLAN = {
     {
       name: "3-Zone Build-Up Game",
       phase: "skill-under-pressure",
-      durationMinutes: 20,
+      durationMinutes: 25,
       area: "40x30 yards in three zones",
       organization:
         "6v6. Pitch split into thirds. Build from the back zone: ball must touch a midfielder in the middle zone before entering the final zone. Defenders may send one presser into the build zone.",
@@ -128,7 +128,7 @@ export const MOCK_SESSION_PLAN = {
     {
       name: "Free Play",
       phase: "free-play",
-      durationMinutes: 15,
+      durationMinutes: 20,
       area: "40x30 yards",
       organization: "6v6 free game. Let them play — praise brave forward passes when they happen naturally.",
       coachingPoints: ["Observe only", "Individual praise at natural stoppages"],
@@ -162,16 +162,66 @@ export const MOCK_SESSION_PLAN = {
     },
   ],
   coachReminders: [
-    "U12s: keep interventions under 30 seconds — coach through questions",
+    "Keep interventions under 30 seconds — coach through questions",
     "Rotate positions so everyone experiences build-up roles",
     "Success = brave attempts, not just completed passes",
   ],
 };
 
-export const MOCK_FORMATION = {
-  recommendedFormation: "3-2-3 (9v9)",
+
+// Demo session plan that echoes the coach's request: age group and theme pass
+// straight through, and drill minutes scale so they always sum to the exact
+// requested duration — a demo must never contradict its own inputs.
+export function mockSessionPlan(ageGroup?: string, theme?: string, durationMinutes?: number): typeof MOCK_SESSION_PLAN {
+  const dur = Math.min(120, Math.max(30, Number(durationMinutes) || 75));
+  const scale = dur / 75;
+  const mins = MOCK_SESSION_PLAN.drills.map((d) => Math.max(5, Math.round(d.durationMinutes * scale)));
+  mins[2] += dur - mins.reduce((a, b) => a + b, 0); // main block absorbs rounding drift
+  return {
+    ...MOCK_SESSION_PLAN,
+    ageGroup: ageGroup || MOCK_SESSION_PLAN.ageGroup,
+    theme: theme || MOCK_SESSION_PLAN.theme,
+    durationMinutes: dur,
+    drills: MOCK_SESSION_PLAN.drills.map((d, i) => ({ ...d, durationMinutes: mins[i] })),
+  };
+}
+
+export const MOCK_FORMATION_7 = {
+  recommendedFormation: "2-3-1 (7v7) — demo sample",
   formationRationale:
-    "The 3-2-3 gives natural triangles on both sides, maps directly onto a 4-3-3 at 11v11, and always provides a spare player in build-up against the common 3-3-2 press.",
+    "The 2-3-1 is the recommended developmental shape at 7v7: balance in every phase, natural triangles, and it maps onto a 4-3-3 later. (Demo sample — a live engine tailors this to your squad.)",
+  positions: [
+    { label: "GK", role: "Sweeper-keeper", x: 50, y: 92, keyInstructions: ["Be an option when we have the ball", "Play short unless pressed"], suggestedPlayer: "" },
+    { label: "LCB", role: "Builder", x: 32, y: 74, keyInstructions: ["Split wide on goal kicks", "Step in with the ball when free"], suggestedPlayer: "" },
+    { label: "RCB", role: "Builder", x: 68, y: 74, keyInstructions: ["Split wide on goal kicks", "Talk to the midfield three"], suggestedPlayer: "" },
+    { label: "LM", role: "Width provider", x: 18, y: 52, keyInstructions: ["Stay wide to stretch the pitch", "Take players on 1v1"], suggestedPlayer: "" },
+    { label: "CM", role: "Connector", x: 50, y: 55, keyInstructions: ["Receive side-on", "Two options for every carrier"], suggestedPlayer: "" },
+    { label: "RM", role: "Width provider", x: 82, y: 52, keyInstructions: ["Stay wide to stretch the pitch", "Back-post runs on far crosses"], suggestedPlayer: "" },
+    { label: "ST", role: "Reference striker", x: 50, y: 26, keyInstructions: ["Pin the last defender", "First presser out of possession"], suggestedPlayer: "" },
+  ],
+  inPossession: [
+    "CBs split, GK joins for a 3v1 or 3v2 against the first line",
+    "Wide mids hug the touchline to open the middle for the CM",
+    "Striker pins the last defender so the CM can receive between lines",
+  ],
+  outOfPossession: [
+    "Striker curves the press to one side",
+    "Ball-side wide mid presses, far-side tucks in",
+    "Two CBs stay connected — never both pulled to the ball",
+  ],
+  transitions: [
+    "On winning it: first look to the striker's feet",
+    "On losing it: nearest player presses for 5 seconds, rest recover central",
+  ],
+  strengths: ["Balance in every phase", "Natural triangles on both sides", "Maps onto 4-3-3 at 11v11"],
+  vulnerabilities: ["The single CM can be crowded by a 2-mid opponent", "Channels beside the CBs against quick wingers"],
+  trainingPriorities: ["CM receiving on the half-turn", "CB splitting and switching play", "Wide 1v1s both ways"],
+};
+
+export const MOCK_FORMATION = {
+  recommendedFormation: "3-2-3 (9v9) — demo sample",
+  formationRationale:
+    "The 3-2-3 gives natural triangles on both sides, maps directly onto a 4-3-3 at 11v11, and always provides a spare player in build-up against the common 3-3-2 press. (Demo sample — a live engine tailors this to your squad.)",
   positions: [
     { label: "GK", role: "Sweeper-keeper", x: 50, y: 92, keyInstructions: ["Split the back three when we have the ball", "Play short unless pressed"], suggestedPlayer: "" },
     { label: "LCB", role: "Wide builder", x: 25, y: 75, keyInstructions: ["Step into midfield when free", "Cover the left channel"], suggestedPlayer: "" },
@@ -209,6 +259,51 @@ export const MOCK_FORMATION = {
   ],
 };
 
+
+export const MOCK_FORMATION_11 = {
+  recommendedFormation: "4-3-3 (11v11) — demo sample",
+  formationRationale:
+    "The 4-3-3 gives width in attack, a protected middle with the single pivot, and clean pressing structure from the front three. (Demo sample — a live engine tailors this to your squad.)",
+  positions: [
+    { label: "GK", role: "Sweeper-keeper", x: 50, y: 92, keyInstructions: ["Split the CBs in build-up", "Own the space behind the line"], suggestedPlayer: "" },
+    { label: "LB", role: "Overlapping fullback", x: 15, y: 72, keyInstructions: ["Overlap when the winger cuts in", "Tuck in on far-side attacks"], suggestedPlayer: "" },
+    { label: "LCB", role: "Left builder", x: 38, y: 76, keyInstructions: ["Break lines with your pass", "Cover the LB's overlaps"], suggestedPlayer: "" },
+    { label: "RCB", role: "Organizer", x: 62, y: 76, keyInstructions: ["Talk constantly", "First option from the GK"], suggestedPlayer: "" },
+    { label: "RB", role: "Overlapping fullback", x: 85, y: 72, keyInstructions: ["Overlap when the winger cuts in", "Tuck in on far-side attacks"], suggestedPlayer: "" },
+    { label: "DM", role: "Single pivot", x: 50, y: 58, keyInstructions: ["Screen the middle out of possession", "Receive between the first two lines"], suggestedPlayer: "" },
+    { label: "LCM", role: "Box-to-box", x: 35, y: 50, keyInstructions: ["Arrive late in the box", "Press their pivot on the trigger"], suggestedPlayer: "" },
+    { label: "RCM", role: "Box-to-box", x: 65, y: 50, keyInstructions: ["Arrive late in the box", "Cover the RB's overlaps"], suggestedPlayer: "" },
+    { label: "LW", role: "Width provider", x: 15, y: 28, keyInstructions: ["Stay wide until the cross", "1v1 when isolated"], suggestedPlayer: "" },
+    { label: "ST", role: "Reference striker", x: 50, y: 20, keyInstructions: ["Pin the CBs", "Curve the press to one side"], suggestedPlayer: "" },
+    { label: "RW", role: "Width provider", x: 85, y: 28, keyInstructions: ["Stay wide until the cross", "Back-post runs on far crosses"], suggestedPlayer: "" },
+  ],
+  inPossession: [
+    "Fullbacks provide the width when wingers come inside",
+    "Pivot drops between the CBs against a two-striker press",
+    "Front three stay connected within 25 yards for combinations",
+  ],
+  outOfPossession: [
+    "4-1-4-1 mid block, press on the back-pass trigger",
+    "Wingers screen their fullbacks before pressing the CBs",
+    "Back four shifts as one unit — never a broken line",
+  ],
+  transitions: [
+    "On winning it: first pass forward to the striker or winger in the channel",
+    "On losing it: 5-second counter-press, then recover into the block",
+  ],
+  strengths: ["Width in attack", "Protected middle", "Clean pressing structure"],
+  vulnerabilities: ["Space behind overlapping fullbacks", "Pivot isolated against a midfield diamond"],
+  trainingPriorities: ["Pivot receiving under pressure", "Fullback-winger rotations", "Rest-defense on attacks"],
+};
+
+// The demo formation must match the requested format — a U9 coach asking for
+// 7v7 gets a 7-player shape, never a 9v9 sample.
+export function mockFormation(format?: string): typeof MOCK_FORMATION {
+  if (String(format) === "7v7") return MOCK_FORMATION_7 as typeof MOCK_FORMATION;
+  if (String(format) === "11v11") return MOCK_FORMATION_11 as typeof MOCK_FORMATION;
+  return MOCK_FORMATION;
+}
+
 export const MOCK_CHAT_REPLY =
   "[Demo mode — set ANTHROPIC_API_KEY for live coaching conversations]\n\nGood question, coach. Before I give you an answer, tell me three things: what age group are we working with, what shape do you currently play, and where exactly is the problem showing up — build-up, middle third, or final third? The answer changes completely depending on those details. A U10 team losing the ball in build-up needs a different picture than a U15 team that can't break a low block.";
 
@@ -218,15 +313,15 @@ export const MOCK_GUIDANCE =
 export const MOCK_GAME_PLAN = {
   matchTitle: "vs Demo United — League Match",
   keysToTheGame: [
-    "Win the midfield duel: their #8 starts every attack",
+    "Win the midfield duel: find their playmaker and deny him the turn",
     "Beat their high line with early balls behind",
     "Own restarts — they concede from corners",
   ],
   inPossession: ["Build 2+1 with the keeper", "Wingers stay high and wide to stretch their back three", "Look for the striker's runs behind on the first touch forward"],
   outOfPossession: ["Mid-block, press on their back-pass trigger", "Deny the switch: press the ball-side, screen the far side", "Recover central first, then out"],
-  setPieces: ["Corners: near-post overload with a back-post runner", "Defending: zonal front post, man on their tall #5", "Quick free kicks whenever their keeper is chatting"],
+  setPieces: ["Corners: near-post overload with a back-post runner", "Defending: zonal front post, man on their tallest player", "Quick free kicks whenever their keeper is chatting"],
   matchups: [
-    { zone: "Their left wing (fast #11)", plan: "Fullback drops earlier; winger tracks the overlap", exploit: false },
+    { zone: "Their quickest wide player", plan: "Fullback drops earlier; winger tracks the overlap", exploit: false },
     { zone: "Behind their fullbacks", plan: "Early diagonals for our wingers to run onto", exploit: true },
   ],
   firstTenMinutes: ["High energy, simple passes, no risks in our third", "First restart: try corner routine #1", "Test their keeper with any shot from the D"],
@@ -237,13 +332,13 @@ export const MOCK_GAME_PLAN = {
 };
 
 export const MOCK_LIVE_REPLY =
-  "[Demo mode]\n\n**Down 1-0 vs a low block — three moves:**\n1. Switch faster: two-touch max in midfield, make their block slide until it tears.\n2. Push your fullbacks past their wingers — force their block to widen, opening the D.\n3. Next corner: run routine #1, their keeper stays on his line.\n\nStay calm on the sideline — the kids play like you look.";
+  "[Demo mode — set ANTHROPIC_API_KEY for live sideline reads]\n\nWith a live engine, I'd answer the exact situation you just described — score, minute, what's breaking down — with 2-3 moves you can make from the bench right now.\n\nUniversal truths while you wait:\n1. Fix the biggest space first, not the last mistake.\n2. One instruction per stoppage — kids can't hold three.\n3. Stay calm on the sideline — the team plays like you look.";
 
 export const MOCK_DEBRIEF =
-  "## What the Data Says\n[Demo mode — set ANTHROPIC_API_KEY for live analysis]\nYour numbers suggest a game you controlled but didn't finish: plenty of territory, low chance quality.\n\n## What Went Well\n- Build-up under pressure held up\n- Defensive shape between boxes\n\n## Fix This Week\n- Final-third decisions: cutback vs cross\n- Box arrivals: nobody attacking the near post\n\n## Player Messages\n- Keeper: brilliant distribution, keep it\n- Striker: your movement created everything, goals will come\n\n## Next Session Focus\nFinishing from cutbacks — the Library's \"Put It In The Mixer\" adapted to your age group.";
+  "[Demo mode — set ANTHROPIC_API_KEY for live analysis of YOUR result and stats]\n\nThe sections below show the SHAPE of a live debrief — the content will be built from the result, story, and stats you just logged (which HAVE been saved to your season memory).\n\n## What the Data Says\nA read of your numbers: territory vs chance quality, where the game was actually won or lost.\n\n## What Went Well\n2-3 things worth repeating, tied to what you trained recently.\n\n## Fix This Week\nThe one or two pictures to train before the next game, with Library exercises named.\n\n## Player Messages\nShort, age-appropriate lines for the players who need them.\n\n## Next Session Focus\nOne theme, one reason.";
 
 export const MOCK_SEASON_PLAN = {
-  title: "Fall Season: Brave On The Ball",
+  title: "Fall Season: Brave On The Ball (4-week sample)",
   ageGroup: "U10",
   weeks: [
     { week: 1, block: "Foundation", theme: "Ball mastery & 1v1 bravery", objectives: ["High touch volume", "Try skills without fear"], sessionIdeas: ["Futsal-style tight-space circuits", "1v1 arenas with skill bonuses"], gameFocus: "Praise every brave dribble, ignore the outcome" },
@@ -252,8 +347,8 @@ export const MOCK_SEASON_PLAN = {
     { week: 4, block: "In possession", theme: "Support angles", objectives: ["Two options for every carrier"], sessionIdeas: ["Triangle keep-away", "3v1 to 3v2 progression"], gameFocus: "Freeze one moment per half to show support shape" },
   ],
   principles: ["Development over results all season", "Every player plays every position", "Success = brave attempts"],
-  checkpoints: ["Week 4: players ask to play out short on goal kicks", "Week 8: first-touch turns appear in games unprompted", "Week 12: team recognizably plays through thirds"],
+  checkpoints: ["Week 2: scanning before receiving appears in games", "Week 3: players ask to play out short on goal kicks", "Week 4: support triangles form without prompting"],
 };
 
 export const MOCK_FILM =
-  "## What I See\n[Demo mode — set ANTHROPIC_API_KEY for live film analysis]\n- **0:02** — Back line is flat and 25 yards from the midfield: two units, no connection.\n- **0:08** — Ball-side pressure arrives but the far-side winger is ball-watching; the switch is wide open.\n- **0:14** — After the turnover, three players chase the same ball — no rest-defense triangle.\n\n## The Problem\nYour shape stretches the moment the ball moves — distances between lines grow instead of sliding together.\n\n## Fix It\nOne picture: \"move like you're connected by rope.\" When the ball shifts, the WHOLE block shifts within two seconds.\n\n## Train It\n- Shadow-play shifting (no opponent): back four + mids slide on the coach's pointer, 8 min\n- 8v8 zone game: goals only count if the whole team is inside the ball-side half — forces collective sliding.";
+  "[Demo mode — set ANTHROPIC_API_KEY for live film analysis of YOUR clip]\n\nBelow is a SAMPLE of the format — the timestamps and observations are illustrative, not from your upload.\n\n## What I See (sample)\n- **0:02** — Back line flat and 25 yards from midfield: two units, no connection.\n- **0:08** — Ball-side pressure arrives but the far winger is ball-watching, leaving the switch open.\n- **0:14** — After the turnover, three players chase the same ball — no rest-defense triangle.\n\n## The Problem\nNamed in one sentence, from your actual footage.\n\n## Fix It\nOne coaching picture your players can hold.\n\n## Train It\n2-3 exercises from the Library, adapted to your age group.";

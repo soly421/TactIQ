@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
-import type { AwardResult, School, SessionPlan } from "../types";
+import type { AwardResult, School, SessionPlan, SquadProfile } from "../types";
 
 const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17+", "HS"];
 
@@ -26,6 +26,20 @@ export function SessionStudio() {
 
   useEffect(() => {
     void getJSON<{ schools: School[] }>("/api/library").then((r) => setSchools(r.schools)).catch(() => {});
+    // The designer knows your team: age, level, and roster size come from the
+    // saved profile instead of being asked again.
+    void getJSON<{ squad: SquadProfile | null }>("/api/team")
+      .then((r) => {
+        if (!r.squad) return;
+        const squad = r.squad;
+        setForm((f) => ({
+          ...f,
+          ageGroup: squad.ageGroup && AGE_GROUPS.includes(squad.ageGroup) ? squad.ageGroup : f.ageGroup,
+          level: squad.level || f.level,
+          playersAvailable: squad.players?.length ? String(squad.players.length) : f.playersAvailable,
+        }));
+      })
+      .catch(() => {});
     // "Train this next" hand-off from the home page.
     const prefill = sessionStorage.getItem("tactiq:prefillTheme");
     if (prefill) {

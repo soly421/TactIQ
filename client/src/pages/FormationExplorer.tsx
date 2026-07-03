@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { sendJSON } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { getJSON, sendJSON } from "../api";
+import { formatForAge, NO_FORMATION_NOTE } from "../age";
 import { TacticsBoard } from "../components/TacticsBoard";
 import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
@@ -61,6 +62,26 @@ export function FormationExplorer() {
   const [oppPieces, setOppPieces] = useState<Piece[]>([]);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
+  const [smallSided, setSmallSided] = useState(false);
+
+  // Open the board on the coach's own format — an 11v11 coach shouldn't land
+  // on a 7v7 pitch. 4v4 teams (U6-U8) get the 7v7 board plus the why-note.
+  useEffect(() => {
+    void getJSON<{ squad: { ageGroup?: string; format?: string } | null }>("/api/team")
+      .then((r) => {
+        if (!r.squad) return;
+        const derived = formatForAge(r.squad.ageGroup) ?? r.squad.format;
+        if (derived === "4v4") {
+          setSmallSided(true);
+          return; // stays on the 7v7 default
+        }
+        if (derived === "9v9" || derived === "11v11") {
+          setFormat(derived);
+          setFormationId(FORMATIONS.find((x) => x.format === derived)!.id);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const DEPTHS: { id: "quick" | "standard" | "deep"; label: string; pro: boolean }[] = [
     { id: "quick", label: "⚡ Quick read", pro: false },
@@ -249,6 +270,7 @@ export function FormationExplorer() {
           ))}
         </div>
         <p className="muted small" style={{ margin: "8px 0 0" }}>{formation.blurb}</p>
+        {smallSided && <p className="small" style={{ margin: "8px 0 0", color: "var(--gold)" }}>⚽ {NO_FORMATION_NOTE}</p>}
       </div>
 
       <div className="tabs" style={{ marginBottom: 12 }}>

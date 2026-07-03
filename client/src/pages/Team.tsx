@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { useGamify } from "../components/Gamify";
 import { TeamSwitcher } from "../components/TeamSwitcher";
+import { formatForAge, formatMismatch } from "../age";
 import type { AwardResult, PlayerNote, SquadProfile } from "../types";
 
 interface ScheduleInfo {
@@ -18,6 +19,8 @@ function ScheduleCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [manual, setManual] = useState({ title: "", start: "", kind: "game" });
 
   useEffect(() => {
     void getJSON<ScheduleInfo>("/api/schedule").then((r) => {
@@ -36,6 +39,43 @@ function ScheduleCard() {
       setMsg(`Imported ${r.imported} events — games and practices detected automatically.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
+    }
+    setBusy(false);
+  }
+
+  // Manual entry: not every league exports a calendar link — a coach must
+  // always be able to type in Saturday's game.
+  async function addManual() {
+    if (!manual.title.trim() || !manual.start) return;
+    setError("");
+    try {
+      const r = await sendJSON<{ events: ScheduleInfo["events"] }>("/api/schedule/event", manual);
+      setInfo((i) => (i ? { ...i, events: r.events } : i));
+      setManual({ title: "", start: "", kind: "game" });
+      setAdding(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't add the event");
+    }
+  }
+
+  async function removeEvent(id: number) {
+    try {
+      const r = await sendJSON<{ events: ScheduleInfo["events"] }>(`/api/schedule/event/${id}`, {}, "DELETE");
+      setInfo((i) => (i ? { ...i, events: r.events } : i));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove the event");
+    }
+  }
+
+  async function syncNow() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await sendJSON<{ imported?: number; events: ScheduleInfo["events"] }>("/api/schedule/sync", {});
+      setInfo((i) => (i ? { ...i, events: r.events } : i));
+      setMsg("Schedule refreshed.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed");
     }
     setBusy(false);
   }
@@ -71,7 +111,31 @@ function ScheduleCard() {
           <button className="btn ghost" onClick={() => void connectTeamSnap()}>Connect TeamSnap</button>
         )}
         {info?.teamsnap.connected && <span className="chip" style={{ alignSelf: "center" }}>✓ TeamSnap connected</span>}
+        <button className="btn ghost" onClick={() => setAdding(!adding)}>{adding ? "✕ Cancel" : "+ Add game/practice"}</button>
+        {info && (info.icsUrl || info.teamsnap.connected) && (
+          <button className="btn ghost" onClick={() => void syncNow()} disabled={busy}>↻ Sync now</button>
+        )}
       </div>
+      {adding && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <select value={manual.kind} onChange={(e) => setManual((m) => ({ ...m, kind: e.target.value }))}>
+            <option value="game">📣 Game</option>
+            <option value="practice">📋 Practice</option>
+          </select>
+          <input
+            style={{ flex: 1, minWidth: 180 }}
+            placeholder={manual.kind === "game" ? "vs Riverside FC" : "Team practice"}
+            value={manual.title}
+            onChange={(e) => setManual((m) => ({ ...m, title: e.target.value }))}
+          />
+          <input
+            type="datetime-local"
+            value={manual.start}
+            onChange={(e) => setManual((m) => ({ ...m, start: e.target.value }))}
+          />
+          <button className="btn" onClick={() => void addManual()} disabled={!manual.title.trim() || !manual.start}>Add</button>
+        </div>
+      )}
       {msg && <p style={{ color: "var(--green)", fontWeight: 600, fontSize: 13 }}>{msg}</p>}
       {error && <div className="error-box">{error}</div>}
       {info && info.events.length > 0 && (
@@ -79,10 +143,13 @@ function ScheduleCard() {
           {info.events.slice(0, 6).map((e) => (
             <div key={e.id} className="season-row">
               <span className="kind">{e.kind === "game" ? "📣" : e.kind === "practice" ? "📋" : "📅"}</span>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div className="title">{e.kind === "game" ? `vs ${e.opponent || "TBD"}` : e.title}</div>
                 <div className="muted small">{e.start.slice(0, 16).replace("T", " · ")}{e.location ? ` · ${e.location}` : ""} · {e.source}</div>
               </div>
+              {e.source === "manual" && (
+                <button className="btn ghost" style={{ fontSize: 11.5, padding: "4px 8px" }} title="Remove this event" onClick={() => void removeEvent(e.id)}>✕</button>
+              )}
             </div>
           ))}
         </div>
@@ -117,9 +184,18 @@ export function Team() {
       .catch(() => {});
   }, []);
 
+  // Typing an age sets the game format automatically (US Soccer standard);
+  // the format select stays editable for leagues that deviate.
   const set = (k: keyof SquadProfile, v: unknown) => {
     setSaved(false);
-    setSquad((s) => ({ ...s, [k]: v }));
+    setSquad((s) => {
+      const next = { ...s, [k]: v };
+      if (k === "ageGroup") {
+        const derived = formatForAge(String(v));
+        if (derived) next.format = derived;
+      }
+      return next;
+    });
   };
 
   const setPlayer = (i: number, k: keyof PlayerNote, v: string) => {
@@ -169,13 +245,18 @@ export function Team() {
             <input value={squad.ageGroup} onChange={(e) => set("ageGroup", e.target.value)} placeholder="e.g. U10" />
           </label>
           <label className="field">
-            Game format
+            Game format <span className="muted small">(set by age)</span>
             <select value={squad.format} onChange={(e) => set("format", e.target.value)}>
               <option>4v4</option>
               <option>7v7</option>
               <option>9v9</option>
               <option>11v11</option>
             </select>
+            {formatMismatch(squad.ageGroup, squad.format) && (
+              <span className="small" style={{ color: "var(--gold)" }}>
+                ⚠ {squad.ageGroup} plays {formatMismatch(squad.ageGroup, squad.format)} under US Soccer standards — keep {squad.format} only if your league differs.
+              </span>
+            )}
           </label>
           <label className="field">
             Level

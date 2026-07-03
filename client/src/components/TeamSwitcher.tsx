@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getJSON, sendJSON } from "../api";
+import { formatForAge } from "../age";
 
 export interface TeamListItem {
   id: number;
@@ -67,7 +68,11 @@ export function TeamSwitcher({ withCreate }: { withCreate?: boolean }) {
             style={{ width: 60 }}
             placeholder="U10"
             value={newTeam.ageGroup}
-            onChange={(e) => setNewTeam((f) => ({ ...f, ageGroup: e.target.value }))}
+            onChange={(e) => {
+              const age = e.target.value;
+              // age sets the format automatically (US Soccer standard)
+              setNewTeam((f) => ({ ...f, ageGroup: age, format: formatForAge(age) ?? f.format }));
+            }}
           />
           <select value={newTeam.format} onChange={(e) => setNewTeam((f) => ({ ...f, format: e.target.value }))}>
             {["4v4", "7v7", "9v9", "11v11"].map((f) => <option key={f}>{f}</option>)}
