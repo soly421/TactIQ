@@ -34,7 +34,7 @@ export function tierFor(plan: Plan, kind: EngineKind): Tier {
   // structured artifacts — sessions, game plans, formations — where the
   // depth actually shows. The explicit Deep Tactical toggle on the board
   // and formation reports also reaches Deep. Free: Light chat, Standard
-  // builds. The unit economics of a $14.99 plan demand exactly this split.
+  // builds. The unit economics of a $19.99 plan demand exactly this split.
   if (plan === "pro") return kind === "chat" ? "standard" : "deep";
   return kind === "chat" ? "light" : "standard";
 }

@@ -83,7 +83,12 @@ billingRouter.post("/club-checkout", async (req, res) => {
     res.status(403).json({ error: "Only the club admin can buy a club license." });
     return;
   }
-  const seats = Math.min(200, Math.max(1, Number(req.body?.seats) || 1));
+  const requested = Number(req.body?.seats) || 0;
+  if (requested < 10) {
+    res.status(400).json({ error: "Club licenses start at 10 seats — below that, individual Pro is the same money. Need help deciding? The pricing page has the math." });
+    return;
+  }
+  const seats = Math.min(200, requested);
   const billing = getUserBilling(userId);
   const clubBilling = getClubBilling(club.id);
   try {

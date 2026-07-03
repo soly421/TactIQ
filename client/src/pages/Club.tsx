@@ -14,7 +14,7 @@ interface ClubReportData {
 // the invoice, and the button that pays it.
 function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: number }) {
   const [report, setReport] = useState<ClubReportData | null>(null);
-  const [seats, setSeats] = useState(coachCount || 5);
+  const [seats, setSeats] = useState(Math.max(10, coachCount || 10));
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -75,7 +75,7 @@ function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: num
           <span className="chip gold-chip">🏆 Founding Club: code <code>FOUNDING50</code> = 50% off year one</span>
           <b>License the whole club:</b>
           <label className="field" style={{ margin: 0 }}>
-            <input type="number" min={1} max={200} value={seats} style={{ width: 80 }} onChange={(e) => setSeats(Number(e.target.value))} />
+            <input type="number" min={10} max={200} value={seats} style={{ width: 80 }} onChange={(e) => setSeats(Number(e.target.value))} />
           </label>
           <span className="muted small">Pro seats</span>
           <button className="btn" onClick={() => void buyLicense()}>👑 Buy club license →</button>

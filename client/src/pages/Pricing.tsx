@@ -49,7 +49,7 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
 
       <div className="tabs" style={{ marginBottom: 18 }}>
         <button className={`tab ${interval === "year" ? "active" : ""}`} onClick={() => setInterval_("year")}>
-          Annual — save 33%
+          Annual — 2 months free
         </button>
         <button className={`tab ${interval === "month" ? "active" : ""}`} onClick={() => setInterval_("month")}>
           Monthly
@@ -71,21 +71,24 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
           <h3>👑 Pro</h3>
           <div className="price">
             {interval === "year" ? (
-              <><b>$9.99</b><span className="muted small"> /mo · billed $119.88 yearly</span></>
+              <><b>$16.58</b><span className="muted small"> /mo · billed $199 yearly (2 months free)</span></>
             ) : (
-              <><b>$14.99</b><span className="muted small"> /mo</span></>
+              <><b>$19.99</b><span className="muted small"> /mo</span></>
             )}
           </div>
           <p className="muted small">The flagship Deep Tactical engine on every session, game plan, and formation build (plus on-demand deep reads on the board), all 16 advisors, unlimited Library and Film Room, Live Bench, season planner, up to 8 teams.</p>
+          <div className="founding-offer">
+            🎖️ <b>Founding Coach</b> — the first 100 coaches lock <b>$14.99/mo for life</b>. Code <code>FOUNDING100</code> at checkout.
+          </div>
           <button className="btn" style={{ marginTop: "auto" }} disabled={busy || isPro} onClick={() => void checkout()}>
-            {isPro ? "✓ You're Pro" : busy ? "One moment…" : `Go Pro — ${interval === "year" ? "$119.88/yr" : "$14.99/mo"}`}
+            {isPro ? "✓ You're Pro" : busy ? "One moment…" : `Go Pro — ${interval === "year" ? "$199/yr" : "$19.99/mo"}`}
           </button>
         </div>
 
         <div className="card price-card">
           <h3>🏛️ Club</h3>
-          <div className="price"><b>$10</b><span className="muted small"> /coach/mo</span></div>
-          <p className="muted small">Every coach gets Pro. The DOC gets the dashboard, the monthly report, philosophy distribution, and one invoice. Volume pricing above 25 seats.</p>
+          <div className="price"><b>$10</b><span className="muted small"> /coach/mo · 10-seat minimum</span></div>
+          <p className="muted small">Half the price of individual Pro, for every coach on staff. The DOC gets the dashboard, the monthly report, philosophy distribution, and one invoice. Volume pricing above 25 seats.</p>
           <div className="founding-offer">
             🏆 <b>Founding Club offer</b> — the first 10 clubs get <b>50% off year one</b>, a founders' badge, and a direct line to the team. Code <code>FOUNDING50</code> at checkout.
           </div>
