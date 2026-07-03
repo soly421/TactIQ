@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getJSON } from "../api";
+import { getJSON, sendJSON } from "../api";
 import { FormationPitch } from "./FormationPitch";
 import { SessionPlanView } from "./SessionPlanView";
 import type { FormationAnalysis, GamePlan, SeasonEntry, SessionPlan } from "../types";
@@ -74,11 +74,13 @@ export function ArtifactBody({ payload }: { payload: unknown }) {
   return <p className="muted small">This entry has no reopenable artifact — the summary above is the record.</p>;
 }
 
-// Expandable row wrapper: fetches the full entry on first open.
-export function ArtifactRow({ entry, children }: { entry: SeasonEntry; children: React.ReactNode }) {
+// Expandable row wrapper: fetches the full entry on first open. Pass onDeleted
+// to offer removal — a two-tap confirm, no browser dialogs.
+export function ArtifactRow({ entry, children, onDeleted }: { entry: SeasonEntry; children: React.ReactNode; onDeleted?: (id: number) => void }) {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<unknown>(undefined);
   const [loading, setLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   async function toggle() {
     if (open) { setOpen(false); return; }
@@ -95,6 +97,15 @@ export function ArtifactRow({ entry, children }: { entry: SeasonEntry; children:
     }
   }
 
+  async function remove(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirming) { setConfirming(true); setTimeout(() => setConfirming(false), 3500); return; }
+    try {
+      await sendJSON(`/api/season/${entry.id}`, {}, "DELETE");
+      onDeleted?.(entry.id);
+    } catch { setConfirming(false); }
+  }
+
   return (
     <div>
       <div
@@ -105,7 +116,19 @@ export function ArtifactRow({ entry, children }: { entry: SeasonEntry; children:
         title={entry.hasArtifact ? "Open the full saved version" : undefined}
       >
         {children}
-        {entry.hasArtifact && <span className="muted small" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{open ? "▾ close" : "▸ open"}</span>}
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+          {entry.hasArtifact && <span className="muted small">{open ? "▾ close" : "▸ open"}</span>}
+          {onDeleted && (
+            <button
+              className="tab"
+              style={{ padding: "2px 8px", fontSize: 12, ...(confirming ? { borderColor: "var(--red, #c0392b)", color: "var(--red, #c0392b)" } : {}) }}
+              title={confirming ? "This also removes it from the AI's season memory" : "Delete from your repository"}
+              onClick={(e) => void remove(e)}
+            >
+              {confirming ? "Really delete?" : "🗑"}
+            </button>
+          )}
+        </span>
       </div>
       {open && (
         <div className="card" style={{ margin: "4px 0 12px", padding: 14 }}>

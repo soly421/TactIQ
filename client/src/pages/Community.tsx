@@ -43,6 +43,50 @@ const LEAGUE_LADDER = [
   "👑 Legends",
 ];
 
+// What every action pays — the "how do I climb?" answer, always visible.
+const XP_MENU: [string, number][] = [
+  ["📋 Design a session", 50],
+  ["📣 Match Day prep/debrief", 45],
+  ["🎞️ Film breakdown", 45],
+  ["🔷 Formation analysis", 40],
+  ["📚 Library unlock", 35],
+  ["💡 Tactical guidance", 25],
+  ["💬 Advisor chat", 5],
+  ["🔎 Rate an output", 2],
+];
+
+// The race math: what stands between you and promotion (or the drop).
+function promotionLine(league: CommunityData["league"]): { text: string; pct: number; tone: "up" | "hold" | "danger" } | null {
+  const you = league.standings.find((s) => s.you);
+  if (!you) return null;
+  const sorted = [...league.standings].sort((a, b) => a.rank - b.rank);
+  if (you.zone === "promote") {
+    const firstSafe = sorted.find((s) => s.zone !== "promote");
+    const cushion = firstSafe ? you.weeklyXp - firstSafe.weeklyXp : you.weeklyXp;
+    return { text: `You're in the promotion zone — ${cushion.toLocaleString()} XP cushion. Hold it and you climb a license.`, pct: 100, tone: "hold" };
+  }
+  const lastPromote = sorted.filter((s) => s.zone === "promote").pop();
+  if (lastPromote) {
+    const gap = Math.max(0, lastPromote.weeklyXp - you.weeklyXp) + 1;
+    const pct = lastPromote.weeklyXp > 0 ? Math.min(100, Math.round((you.weeklyXp / (lastPromote.weeklyXp + 1)) * 100)) : 0;
+    const sessions = Math.max(1, Math.ceil(gap / 50));
+    return {
+      text: you.zone === "demote"
+        ? `⚠️ You're in the drop zone — ${gap.toLocaleString()} XP to safety. One session (+50) changes everything.`
+        : `${gap.toLocaleString()} XP to the promotion zone — about ${sessions} session${sessions === 1 ? "" : "s"} of work.`,
+      pct,
+      tone: you.zone === "demote" ? "danger" : "up",
+    };
+  }
+  // a young league with no promote zone yet: race the pace target instead
+  const PACE = 300;
+  return {
+    text: `Promotion pace: ${you.weeklyXp.toLocaleString()} / ${PACE} XP this week — bank it now, it counts the moment the league fills.`,
+    pct: Math.min(100, Math.round((you.weeklyXp / PACE) * 100)),
+    tone: "up",
+  };
+}
+
 export function Community({ user }: { user: User }) {
   const { progress } = useGamify();
   const [view, setView] = useState<"global" | "club">("global");
@@ -112,6 +156,19 @@ export function Community({ user }: { user: User }) {
                       </span>
                     ))}
                   </div>
+                  {(() => {
+                    const line = promotionLine(data.league);
+                    if (!line) return null;
+                    const color = line.tone === "danger" ? "var(--red, #c0392b)" : line.tone === "hold" ? "var(--green)" : "var(--accent)";
+                    return (
+                      <div style={{ margin: "8px 0 10px" }}>
+                        <div className="small" style={{ fontWeight: 600, marginBottom: 4 }}>{line.text}</div>
+                        <div style={{ height: 8, background: "var(--card-border, #333)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: `${line.pct}%`, height: "100%", background: color, transition: "width .6s" }} />
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {data.league.standings.map((s) => (
                     <div key={s.rank} className={`leader-row zone-${s.zone} ${s.you ? "you" : ""}`}>
                       <span className="rank">{s.zone === "promote" ? "▲" : s.zone === "demote" ? "▼" : ""} #{s.rank}</span>
@@ -138,6 +195,32 @@ export function Community({ user }: { user: User }) {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {progress.quests && progress.quests.length > 0 && (
+                  <div className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <h2 style={{ margin: 0 }}>⚡ Today's Quests</h2>
+                      <span className="muted small">bonus XP toward promotion</span>
+                    </div>
+                    {progress.quests.map((q) => (
+                      <div key={q.id} className={`quest-row ${q.done ? "done" : ""}`}>
+                        <span className="q-emoji">{q.emoji}</span>
+                        <div style={{ flex: 1 }}>
+                          <div className="q-title">{q.title}</div>
+                          <div className="q-bar"><div className="fill" style={{ width: `${Math.min(100, (q.progress / q.target) * 100)}%` }} /></div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div className="q-status">{q.done ? "✓ Done" : `${Math.min(q.progress, q.target)}/${q.target}`}</div>
+                          <div className="q-xp">+{q.bonusXp} XP</div>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                      {XP_MENU.map(([label, xp]) => (
+                        <span key={label} className="chip" style={{ fontSize: 11 }}>{label} <b style={{ color: "var(--accent)" }}>+{xp}</b></span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <TouchlineDebate />
                 <div className="card">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>

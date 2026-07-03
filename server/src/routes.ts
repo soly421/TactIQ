@@ -9,7 +9,7 @@ import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
-import { setCoachProfile, getCoachProfile, getSeasonEntryById, refundMessage, topAdvisorNames, setUserTz, userToday,
+import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry, refundMessage, topAdvisorNames, setUserTz, userToday,
   adminOverview, estCostToday, getUserBilling, markClubInterest,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
@@ -284,7 +284,7 @@ You design world-class youth training sessions. Every drill must include a rende
 - Team level: ${level || "recreational travel"}
 - Extra notes: ${notes || "none"}`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...mockSessionPlan(ageGroup, theme, Number(durationMinutes)), title: `${MOCK_SESSION_PLAN.title} (demo sample)` },
+      mock: (() => { const m = mockSessionPlan(ageGroup, theme, Number(durationMinutes)); return { ...m, title: `${m.title} (demo sample)` }; })(),
     });
 
     const gamify = award(userId, "session");
@@ -427,7 +427,9 @@ This session is from TactIQ's library. Build it to spec:
 - Duration: 75 minutes${getSquad(userId) ? `\nAdapt player counts and complexity to the coach's team profile where sensible.` : ""}
 Give it a specific, evocative title of your own (not the catalog label).`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: { ...MOCK_SESSION_PLAN, title: `${template.topicName} (demo sample)`, theme: template.theme, ageGroup: template.ageBand },
+      // Demo unlocks build from the catalog's own exercise content — the
+      // signature exercise keyword-matches itself, so the drills are real.
+      mock: (() => { const m = mockSessionPlan(template.ageBand, template.theme, 75); return { ...m, title: `${template.topicName} (demo sample)` }; })(),
     });
 
     saveLibraryPlan(userId, template.id, plan_);
@@ -858,6 +860,16 @@ api.get("/season/:id", (req, res) => {
     return;
   }
   res.json({ entry });
+});
+
+// Repository housekeeping: a coach can prune their own history. Note the
+// entry also leaves season memory — deleting it means the AI forgets it too.
+api.delete("/season/:id", (req, res) => {
+  if (!deleteSeasonEntry(uid(req), Number(req.params.id))) {
+    res.status(404).json({ error: "Entry not found" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // ---- Settings / plan tier ----

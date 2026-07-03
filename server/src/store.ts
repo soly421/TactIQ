@@ -180,6 +180,11 @@ export function getSeasonEntryById(userId: number, id: number): SeasonEntry | nu
   return r ? { ...r, payload: r.payload ? JSON.parse(r.payload) : undefined } : null;
 }
 
+// Same ownership rule as the read: the user owns their repository entries.
+export function deleteSeasonEntry(userId: number, id: number): boolean {
+  return db.prepare("DELETE FROM season_entries WHERE user_id = ? AND id = ?").run(userId, id).changes > 0;
+}
+
 // ---- coach profile (onboarding demographics) ----
 // Who is this coach? Collected once at first login; the role feeds tone
 // personalization in every prompt, referral feeds acquisition analytics,

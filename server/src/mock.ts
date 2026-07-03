@@ -170,19 +170,69 @@ export const MOCK_SESSION_PLAN = {
 
 
 // Demo session plan that echoes the coach's request: age group and theme pass
-// straight through, and drill minutes scale so they always sum to the exact
-// requested duration — a demo must never contradict its own inputs.
+// straight through, drill minutes scale to the exact requested duration, and —
+// crucially — the DRILLS themselves come from the real signature-exercise
+// catalog, keyword-matched to the theme. Two different themes produce two
+// different sessions even without a live engine; a demo must never feel canned.
+import { SIGNATURE_EXERCISES } from "./exercises.js";
+
+// Words that appear in every soccer sentence tell us nothing about the theme.
+const THEME_STOPWORDS = new Set(["the", "and", "with", "for", "after", "into", "against", "our", "your", "ball", "balls", "game", "games", "play", "playing", "player", "players", "team", "keep", "away", "drill", "drills", "session", "practice", "soccer", "football"]);
+
+function themedExercises(theme: string): { warmup?: (typeof SIGNATURE_EXERCISES)[number]; technical?: (typeof SIGNATURE_EXERCISES)[number]; pressure?: (typeof SIGNATURE_EXERCISES)[number] } {
+  // stem trailing "s" and match at word starts, so "rondos" finds "rondo"
+  // and "finishing" finds "finishing" — but "keep" can't hide in "goalkeeper"
+  const stems = theme.toLowerCase().split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2 && !THEME_STOPWORDS.has(t))
+    .map((t) => (t.endsWith("s") ? t.slice(0, -1) : t));
+  const scored = SIGNATURE_EXERCISES.map((e) => {
+    const name = e.name.toLowerCase();
+    const hay = `${name} ${e.phase} ${e.organization.toLowerCase()}`;
+    let score = stems.reduce((s, t) => {
+      const rx = new RegExp(`\\b${t.replace(/[^a-z0-9]/g, "")}`);
+      return s + (rx.test(hay) ? (rx.test(name) ? 3 : 1) : 0);
+    }, 0);
+    // no keyword hits at all: fall back to a theme-hash pick so different
+    // themes still land on different (if less targeted) exercises
+    if (score === 0) score = -(Math.abs([...theme].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) - SIGNATURE_EXERCISES.indexOf(e) * 97) % 1000) / 1000;
+    return { e, score };
+  }).sort((a, b) => b.score - a.score);
+  const pickBy = (want: (typeof SIGNATURE_EXERCISES)[number]["complexity"], taken: Set<string>) => {
+    const hit = scored.find((s) => s.e.complexity === want && !taken.has(s.e.id)) ?? scored.find((s) => !taken.has(s.e.id));
+    if (hit) taken.add(hit.e.id);
+    return hit?.e;
+  };
+  const taken = new Set<string>();
+  return { warmup: pickBy("foundation", taken), technical: pickBy("intermediate", taken), pressure: pickBy("advanced", taken) };
+}
+
 export function mockSessionPlan(ageGroup?: string, theme?: string, durationMinutes?: number): typeof MOCK_SESSION_PLAN {
   const dur = Math.min(120, Math.max(30, Number(durationMinutes) || 75));
   const scale = dur / 75;
   const mins = MOCK_SESSION_PLAN.drills.map((d) => Math.max(5, Math.round(d.durationMinutes * scale)));
   mins[2] += dur - mins.reduce((a, b) => a + b, 0); // main block absorbs rounding drift
+  const th = theme || MOCK_SESSION_PLAN.theme;
+  const picks = themedExercises(th);
+  const chosen = [picks.warmup, picks.technical, picks.pressure];
+  const drills = MOCK_SESSION_PLAN.drills.map((d, i) => {
+    const ex = chosen[i]; // drill 4 (free play) stays a free game — always right
+    if (!ex) return { ...d, durationMinutes: mins[i] };
+    return {
+      ...d, // keeps the renderable diagram as a generic visual for the slot
+      durationMinutes: mins[i],
+      name: ex.name,
+      organization: `${ex.organization}${ex.tradition ? ` (From the ${ex.tradition}.)` : ""}`,
+      coachingPoints: ex.coachingPoints.slice(0, 3),
+      progressions: ["Tighten the space or add a defender to raise the pressure", "Constrain to two-touch or weak foot once quality holds"],
+    };
+  });
   return {
     ...MOCK_SESSION_PLAN,
+    title: th.length > 46 ? `${th.slice(0, 44)}…` : th,
     ageGroup: ageGroup || MOCK_SESSION_PLAN.ageGroup,
-    theme: theme || MOCK_SESSION_PLAN.theme,
+    theme: th,
     durationMinutes: dur,
-    drills: MOCK_SESSION_PLAN.drills.map((d, i) => ({ ...d, durationMinutes: mins[i] })),
+    drills,
   };
 }
 

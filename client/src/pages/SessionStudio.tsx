@@ -119,7 +119,7 @@ export function SessionStudio() {
             <p className="muted">{mine.length === 0 ? "Nothing yet — design your first session and it lands here." : "No sessions match that search."}</p>
           )}
           {filtered.slice(0, 40).map((e) => (
-            <ArtifactRow key={e.id} entry={e}>
+            <ArtifactRow key={e.id} entry={e} onDeleted={(id) => setMine((m) => m.filter((x) => x.id !== id))}>
               <span className="kind">📋</span>
               <div>
                 <div className="title">{e.title}</div>

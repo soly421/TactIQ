@@ -188,9 +188,9 @@ export interface Scenario {
 export const SCENARIOS: Scenario[] = [
   { id: "base", name: "Base Shape", emoji: "📐", points: ["The rest positions — every scenario starts and ends here.", "Spacing is the discipline: too close and one pass beats two of you; too far and there's no support."] },
   { id: "buildup", name: "Build-Up", emoji: "🧱", points: ["The keeper is a +1 — build 3v2 against their first line, not 2v2.", "Split the CBs to the width of the box; the pivot shows between or beside their strikers.", "Fullbacks/wide players push HIGH before the ball moves — their marker has to choose.", "The picture to find: a free player facing forward between their lines."] },
-  { id: "highpress", name: "High Press", emoji: "🌪️", points: ["Press with the front line curved — show them ONE way, never both.", "The trigger: a bad touch, a back-pass, or a keeper forced onto their weak foot.", "Squeeze the whole team up — the back line holds the halfway line, keeper sweeps.", "If they break the first wave, everyone sprints home — no half-pressing."] },
-  { id: "midblock", name: "Mid Block", emoji: "🧊", points: ["Compact 30-35 yards front-to-back; shift together as the ball moves.", "Protect the middle — force play around the block, never through it.", "The front players screen passing lanes into their pivot.", "The block is a trap, not a rest: win it here and you're 40 yards from goal."] },
-  { id: "lowblock", name: "Low Block", emoji: "🏰", points: ["Defend the width of the box, not the width of the pitch.", "Every player behind the ball, one outlet stays for the counter.", "Deny the cutback zone — it's the highest-value pass in youth soccer.", "Clear with purpose: to the corner or to the outlet, never through the middle."] },
+  { id: "highpress", name: "High Press", emoji: "🌪️", points: ["Force play to ONE side, then trap on the touchline — the sideline is an extra defender.", "Ball-side: lock every short option man-for-man. Weak side: tuck into the middle — the far winger is the one pass you INVITE, it takes three seconds in the air.", "Squeeze the whole team up and slide it toward the ball — the back line holds halfway, keeper sweeps the space behind.", "If they break the first wave, everyone sprints home — no half-pressing."] },
+  { id: "midblock", name: "Mid Block", emoji: "🧊", points: ["Compact 30-35 yards front-to-back AND ball-side: the whole block slides toward the ball together.", "Weak-side players tuck inside — you defend the middle and the ball side; the far touchline is the switch you re-shift on.", "The front players screen passing lanes into their pivot.", "The block is a trap, not a rest: win it here and you're 40 yards from goal."] },
+  { id: "lowblock", name: "Low Block", emoji: "🏰", points: ["Defend the width of the box, not the width of the pitch — and slide the block to the ball side.", "Nearest defender engages the ball; every other player behind it; one outlet stays alive for the counter.", "Deny the cutback zone — it's the highest-value pass in youth soccer.", "Clear with purpose: to the corner or to the outlet, never through the middle."] },
   { id: "attTransition", name: "Attacking Transition", emoji: "🚀", points: ["First pass FORWARD if it's on — the picture lasts 3 seconds.", "Nearest runners break in behind, one support player arrives late.", "Rest defense holds: 2+1 stay behind the ball, always.", "Finish the attack within 10 seconds or keep the ball and reset."] },
   { id: "defTransition", name: "Counter-Press", emoji: "⛈️", points: ["The 5-second rule: the nearest 2-3 players HUNT the instant it's lost.", "Cut the exit passes with curved runs — trap the ball, not the player.", "Everyone else drops and narrows while the press happens.", "Win it back high and the goal is 3 passes away."] },
   { id: "wideAttack", name: "Wide Attack & Box Arrivals", emoji: "🎯", points: ["Overload one side to isolate the far winger 1v1.", "Box arrivals: near post, far post, cutback, top of the box — four runs, every cross.", "The cutback beats the floated cross at every youth age.", "Weak-side player stays wide until the last second — then attacks the far post."] },
@@ -203,6 +203,24 @@ const clamp = (v: number, lo = 4, hi = 96) => Math.min(hi, Math.max(lo, v));
 // order and relative spacing within a line, so lines compress or stretch
 // without ever collapsing into each other.
 const scaleX = (p: Piece, f: number, lo = 6, hi = 94) => { p.x = clamp(50 + (p.x - 50) * f, lo, hi); };
+
+// The zonal-shift principle: out of possession the whole block slides toward
+// the ball, lines nearer the ball sliding harder, and NOBODY holds width on
+// the weak side — the far winger tucks into the block and re-shifts on the
+// switch. `weakCap` is how far from the ball side any player may stay.
+function ballSideShift(ps: Piece[], ballX: number, factors: { front: number; mid: number; back: number }, weakCap: number) {
+  for (const p of ps) {
+    if (p.role === "GK") { p.x = clamp(50 + (ballX - 50) * 0.15, 40, 60); continue; }
+    const f = p.y >= 44 ? factors.back : p.y >= 26 ? factors.mid : factors.front;
+    p.x = clamp(p.x + (ballX - 50) * f, 4, 96);
+    // weak-side tuck: soft-cap distance from the ball side
+    if (ballX < 50 && p.x > weakCap) p.x = weakCap + (p.x - weakCap) * 0.25;
+    if (ballX > 50 && p.x < 100 - weakCap) p.x = (100 - weakCap) - ((100 - weakCap) - p.x) * 0.25;
+  }
+}
+
+const distTo = (t: { x: number; y: number }) => (a: Piece, b: Piece) =>
+  Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y);
 
 // No two pieces may occupy the same spot: nudge overlapping pairs apart.
 // A safety net so every one of the 20 formations stays readable in every
@@ -261,15 +279,26 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
       cms.forEach((c) => {
         const live = ps.find((p) => p.id === c.id)!;
         const central = Math.abs(c.x - 50) < 12;
-        if (central) live.y = by("DM").length ? 50 : 58;
+        if (central) live.y = by("DM").length ? 50 : 54;
         else { live.y = 46; scaleX(live, 1.3, 8, 92); }
       });
+      // Every build-up needs a central receiver between the lines. Shapes
+      // with no natural pivot pocket (e.g. two strikers over a lone 6) use
+      // the classic answer: one striker drops in, one pins the back line.
+      if (!ps.some((p) => p.role !== "GK" && p.y > 32 && p.y < 56 && Math.abs(p.x - 50) < 22)) {
+        const dropper = [...by("ST"), ...by("AM"), ...by("W")].sort((a, b) => Math.abs(a.x - 50) - Math.abs(b.x - 50))[0];
+        if (dropper) { const live = ps.find((p) => p.id === dropper.id)!; live.x = 50; live.y = 44; }
+      }
       return resolveCollisions(ps);
     }
 
     case "highpress": {
-      // Squeeze the whole team up: back line holds halfway, keeper sweeps
-      // behind it, front curves onto their build-up.
+      // The wide press trap — the standard modern picture (the pressing
+      // schools all teach the same geometry): force play to one side, pin
+      // the receiver against the touchline, lock every ball-side lane
+      // man-for-man, tuck the weak side into the middle, and hold the back
+      // line at halfway with the keeper sweeping behind it.
+      const ball = { x: 14, y: 26 }; // their fullback, trapped on our left touchline
       for (const p of ps) {
         if (p.role === "GK") p.y = 70;
         else if (p.role === "CB") { p.y = 50; scaleX(p, 0.9); }
@@ -280,11 +309,31 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
         else if (p.role === "W") { p.y = 15; scaleX(p, 0.9); }
         else if (p.role === "ST") p.y = 9;
       }
+      // the whole team slides toward the trap; nobody defends the far grass
+      ballSideShift(ps, ball.x, { front: 0.55, mid: 0.42, back: 0.3 }, 66);
+      // trap jobs: nearest front player presses the ball AT the touchline…
+      const front = ps.filter((p) => ["W", "ST", "AM"].includes(p.role)).sort(distTo(ball));
+      const presser = front[0];
+      if (presser) { presser.x = clamp(ball.x - 2, 6); presser.y = ball.y - 6; }
+      // …a striker curves to cut the back-pass to their CB (the cover shadow)…
+      const cutter = ps.filter((p) => (p.role === "ST" || p.role === "AM") && p.id !== presser?.id).sort(distTo(ball))[0];
+      if (cutter) { cutter.x = clamp(ball.x + 14); cutter.y = clamp(ball.y - 11, 6); }
+      // …the nearest mid locks the bounce pass into their pivot…
+      const locker = ps.filter((p) => (p.role === "CM" || p.role === "DM") && p.id !== presser?.id && p.id !== cutter?.id).sort(distTo(ball))[0];
+      if (locker) { locker.x = clamp(ball.x + 9); locker.y = clamp(ball.y + 9); }
+      // …and the ball-side defender squeezes onto the down-the-line lane —
+      // a trap with the line pass open isn't a trap.
+      const laneCover = ps.filter((p) => (p.role === "FB" || p.role === "CB") && p.id !== locker?.id).sort(distTo(ball))[0];
+      if (laneCover) { laneCover.x = clamp(ball.x + 2, 6); laneCover.y = clamp(ball.y + 17); }
       return resolveCollisions(ps);
     }
 
     case "midblock": {
-      // 30 yards front-to-back, protect the middle, force play around.
+      // 30 yards front-to-back — and slid TOWARD the ball. A block that
+      // stays symmetric while the ball is wide defends nothing; the two
+      // banks shift together and the weak side tucks in (re-shift on the
+      // switch, don't chase it in the air).
+      const ball = { x: 76, y: 28 }; // ball on our right flank, their winger's feet
       for (const p of ps) {
         if (p.role === "GK") p.y = 90;
         else if (p.role === "CB") { p.y = 70; scaleX(p, 0.85); }
@@ -295,11 +344,19 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
         else if (p.role === "AM") { p.y = 45; scaleX(p, 0.6); }
         else if (p.role === "ST") { p.y = 40; scaleX(p, 0.5); }
       }
+      ballSideShift(ps, ball.x, { front: 0.4, mid: 0.32, back: 0.24 }, 62);
+      // nearest front-line player angles out to show the ball down the line,
+      // screening the inside pass — the block behind them holds its shape
+      const shower = ps.filter((p) => ["ST", "W", "AM"].includes(p.role)).sort(distTo(ball))[0];
+      if (shower) { shower.x = clamp(ball.x - 6); shower.y = clamp(ball.y + 8); }
       return resolveCollisions(ps);
     }
 
     case "lowblock": {
-      // Defend the width of the box; one outlet stays alive for the counter.
+      // Box-width AND ball-side: the near defender engages the ball carrier
+      // on the flank, the block slides across behind him, and one outlet
+      // stays alive at the halfway line for the clearance.
+      const ball = { x: 84, y: 68 }; // their winger working our right flank
       for (const p of ps) {
         if (p.role === "GK") p.y = 94;
         else if (p.role === "CB") { p.y = 84; scaleX(p, 0.72); }
@@ -311,13 +368,19 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
         else if (p.role === "ST") { p.y = 62; scaleX(p, 0.5); }
       }
       const outlet = sts[0] ?? wingers[0];
-      if (outlet) { const live = ps.find((p) => p.id === outlet.id)!; live.x = 50; live.y = 46; }
+      ballSideShift(ps, ball.x, { front: 0.3, mid: 0.26, back: 0.2 }, 58);
+      // near defender steps out to the ball — deny the cross, don't dive in
+      const engager = ps.filter((p) => ["FB", "CB", "W", "CM", "DM"].includes(p.role) && p.id !== outlet?.id).sort(distTo(ball))[0];
+      if (engager) { engager.x = clamp(ball.x - 2); engager.y = clamp(ball.y + 4); }
+      if (outlet) { const live = ps.find((p) => p.id === outlet.id)!; live.x = 44; live.y = 46; }
       return resolveCollisions(ps);
     }
 
     case "attTransition": {
       // First 3 seconds after winning it: runners break, wide players STAY
-      // wide, rest-defense (CBs + pivot) holds its line.
+      // wide, rest-defense (2+1 behind the ball) holds — ALWAYS, whatever
+      // the shape. One ball lost carelessly must not become a 1v1 with your
+      // keeper.
       for (const p of ps) {
         if (p.role === "ST") p.y = clamp(p.y - 18, 6);
         else if (p.role === "W") { p.y = clamp(p.y - 16, 8); scaleX(p, 1.08, 8, 92); }
@@ -326,6 +389,13 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
         else if (p.role === "FB") { p.y = clamp(p.y - 6, 30); scaleX(p, 1.05, 6, 94); }
         else if (p.role === "CB") p.y = Math.min(p.y, 64);
         else if (p.role === "GK") p.y = 88;
+      }
+      // guarantee the 2+1: single-CB shapes keep their deepest mid home
+      const home = () => ps.filter((p) => p.role !== "GK" && p.y >= 52);
+      const stayers = ps.filter((p) => ["CM", "DM", "FB"].includes(p.role)).sort((a, b) => b.y - a.y);
+      for (const sMid of stayers) {
+        if (home().length >= 2) break;
+        sMid.y = 56; sMid.x = clamp(50 + (sMid.x - 50) * 0.6);
       }
       return resolveCollisions(ps);
     }
@@ -363,39 +433,40 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
     }
 
     case "wideAttack": {
-      // Overload the right, four distinct box arrivals: near post, far post,
-      // cutback, top of the box. Every piece gets its OWN slot.
+      // The wide-overload picture, built as SLOTS so it's correct in every
+      // shape — even ones with no wingers or fullbacks. The principles:
+      // overload the ball side (carrier + overlap + near support beats their
+      // fullback), fill the box arrivals (near post, far post, cutback), keep
+      // a pivot recycling and a balance player home for the counter.
+      const slots: { x: number; y: number; prefer: Role[] }[] = [
+        { x: 86, y: 16, prefer: ["W", "ST", "AM", "CM"] },   // isolated carrier, ball side
+        { x: 93, y: 28, prefer: ["FB", "CM", "DM", "W"] },   // overlap outside him
+        { x: 58, y: 9, prefer: ["ST", "W", "AM", "CM"] },    // near-post run
+        { x: 68, y: 27, prefer: ["AM", "CM", "ST", "W"] },   // cutback zone / near support
+        { x: 39, y: 12, prefer: ["W", "ST", "AM", "FB"] },   // far post, arriving late
+        { x: 50, y: 32, prefer: ["CM", "AM", "DM"] },        // top of the box
+        { x: 56, y: 45, prefer: ["DM", "CM", "FB"] },        // recycling pivot
+        { x: 34, y: 52, prefer: ["FB", "DM", "CM"] },        // weak-side balance
+        { x: 30, y: 40, prefer: ["CM", "FB", "DM"] },        // spare: weak-side recycle
+      ];
+      const movers = ps.filter((p) => !["GK", "CB", "OPP"].includes(p.role));
+      const taken = new Set<string>();
+      for (const slot of slots) {
+        const cand = movers
+          .filter((p) => !taken.has(p.id))
+          .sort((a, b) => {
+            const pa = slot.prefer.indexOf(a.role), pb = slot.prefer.indexOf(b.role);
+            const ra = pa === -1 ? 9 : pa, rb = pb === -1 ? 9 : pb;
+            return ra - rb || Math.hypot(a.x - slot.x, a.y - slot.y) - Math.hypot(b.x - slot.x, b.y - slot.y);
+          })[0];
+        if (!cand) break;
+        taken.add(cand.id);
+        cand.x = slot.x; cand.y = slot.y;
+      }
       for (const p of ps) {
         if (p.role === "GK") p.y = 90;
-        else if (p.role === "CB") { p.y = 60; scaleX(p, 0.8); p.x = clamp(p.x + 5); }
-        else if (p.role === "AM") { p.x = 52; p.y = 24; }
-        else if (p.role === "W") {
-          if (p.x > 50) { p.x = 87; p.y = 16; }           // the overloaded winger
-          else { p.x = 38; p.y = 12; }                     // far-post arrival
-        } else if (p.role === "FB") {
-          if (p.x > 50) { p.x = 92; p.y = 26; }            // overlap
-          else { p.x = 30; p.y = 52; }                     // tucks in for balance
-        } else if (p.role === "ST") {
-          p.y = 10; p.x = sts.length > 1 ? (p.x < 50 ? 46 : 60) : 58; // near post
-        }
+        else if (p.role === "CB") { p.y = 60; scaleX(p, 0.8); p.x = clamp(p.x + 5); } // rest defense shades ball-side
       }
-      // Pivots stagger: near-side pivot supports the overload, the other
-      // balances — never the same spot.
-      const dms = by("DM").sort((a, b) => a.x - b.x);
-      dms.forEach((d, i) => {
-        const live = ps.find((p) => p.id === d.id)!;
-        const slots: [number, number][] = dms.length >= 2 ? [[42, 50], [60, 44]] : [[54, 48]];
-        const slot = slots[Math.min(i, slots.length - 1)];
-        live.x = slot[0]; live.y = slot[1];
-      });
-      // Midfield arrivals: right-most CM attacks the top of the box, the
-      // others hold staggered recycling angles — never the same spot.
-      cms.forEach((c, i) => {
-        const live = ps.find((p) => p.id === c.id)!;
-        const slots: [number, number][] = cms.length >= 3 ? [[32, 44], [48, 40], [66, 32]] : [[40, 42], [66, 32]];
-        const slot = slots[Math.min(i, slots.length - 1)];
-        live.x = slot[0]; live.y = slot[1];
-      });
       return resolveCollisions(ps);
     }
 
@@ -433,10 +504,19 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
         const slot = midSlots[Math.min(i, midSlots.length - 1)];
         live.x = slot[0]; live.y = slot[1];                  // first owns the cutback zone
       });
+      let outletUsed = false;
       for (const p of ps) {
         if (p.role === "AM" || p.role === "W") { p.y = 62; scaleX(p, 0.5); }
-        else if (p.role === "ST") { p.x = 50; p.y = 48; }    // the outlet
-        else if (p.role === "GK") p.y = 94;
+        else if (p.role === "ST") {
+          if (!outletUsed) { p.x = 50; p.y = 48; outletUsed = true; } // the outlet
+          else { p.x = 46; p.y = 66; }                       // second striker drops toward the cutback
+        } else if (p.role === "GK") p.y = 94;
+      }
+      // The cutback is the highest-value pass against a box defense — it is
+      // ALWAYS owned, whoever has to do it (mid, winger, or second striker).
+      if (!ps.some((p) => p.role !== "GK" && p.y > 68 && p.y < 80 && p.x > 38 && p.x < 60)) {
+        const owner = ps.filter((p) => ["W", "AM", "ST", "CM", "DM"].includes(p.role) && !(p.x === 50 && p.y === 48)).sort(distTo({ x: 48, y: 74 }))[0];
+        if (owner) { owner.x = 48; owner.y = 74; }
       }
       return resolveCollisions(ps);
     }
@@ -464,15 +544,21 @@ export const CHOREO: Partial<Record<ScenarioId, Choreo>> = {
     waves: [["GK", "CB", "FB"], ["DM", "CM"], ["AM", "W", "ST"]],
   },
   highpress: {
-    ball: [{ x: 50, y: 12 }, { x: 28, y: 16 }, { x: 16, y: 24 }],
+    // their keeper plays out, the pass gets forced left, the trap snaps
+    // shut on the fullback at the touchline — where our press picture ends
+    ball: [{ x: 50, y: 12 }, { x: 30, y: 16 }, { x: 14, y: 26 }],
     waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
   },
   midblock: {
-    ball: [{ x: 50, y: 22 }, { x: 24, y: 28 }, { x: 76, y: 28 }, { x: 50, y: 20 }],
+    // they circulate left then right; the block's end picture is the
+    // ball-side shift onto their right-flank carrier
+    ball: [{ x: 50, y: 22 }, { x: 24, y: 28 }, { x: 76, y: 28 }],
     waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
   },
   lowblock: {
-    ball: [{ x: 72, y: 56 }, { x: 86, y: 70 }, { x: 55, y: 84 }, { role: "ST", pick: "center" }],
+    // ball worked to their winger on our right, cross comes in, first
+    // contact clears it to the outlet at halfway
+    ball: [{ x: 72, y: 56 }, { x: 84, y: 68 }, { x: 55, y: 84 }, { role: "ST", pick: "center" }],
     waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
   },
   attTransition: {
