@@ -1,14 +1,18 @@
 import { savePlanOffline } from "../savedPlans";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getJSON, sendJSON } from "../api";
+import { ArtifactRow } from "../components/ArtifactView";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { useGamify } from "../components/Gamify";
-import type { AwardResult, School, SessionPlan, SquadProfile } from "../types";
+import type { AwardResult, School, SeasonEntry, SessionPlan, SquadProfile } from "../types";
 
 const AGE_GROUPS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U13", "U14", "U15", "U16", "U17+", "HS"];
 
 export function SessionStudio() {
   const { celebrate } = useGamify();
+  const [mode, setMode] = useState<"design" | "mine">("design");
+  const [mine, setMine] = useState<SeasonEntry[]>([]);
+  const [query, setQuery] = useState("");
   const [schools, setSchools] = useState<School[]>([]);
   const [form, setForm] = useState({
     ageGroup: "U10",
@@ -26,6 +30,10 @@ export function SessionStudio() {
 
   useEffect(() => {
     void getJSON<{ schools: School[] }>("/api/library").then((r) => setSchools(r.schools)).catch(() => {});
+    // The repository: every session ever designed for this team, reopenable.
+    void getJSON<{ season: SeasonEntry[] }>("/api/season?limit=500")
+      .then((r) => setMine(r.season.filter((e) => e.kind === "session")))
+      .catch(() => {});
     // The designer knows your team: age, level, and roster size come from the
     // saved profile instead of being asked again.
     void getJSON<{ squad: SquadProfile | null }>("/api/team")
@@ -67,6 +75,7 @@ export function SessionStudio() {
       });
       setPlan(res.plan);
       savePlanOffline(res.plan);
+      if (res.entryId) setMine((m) => [{ id: res.entryId!, date: new Date().toISOString(), kind: "session", title: res.plan.title, summary: res.plan.theme, hasArtifact: true }, ...m]);
       setEntryId(res.entryId);
       celebrate(res.award);
     } catch (e) {
@@ -75,9 +84,55 @@ export function SessionStudio() {
     setLoading(false);
   }
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return mine;
+    return mine.filter((e) => `${e.title} ${e.summary}`.toLowerCase().includes(q));
+  }, [mine, query]);
+
   return (
     <div className="fade-in">
+      <div className="tabs" style={{ marginBottom: 14 }}>
+        <button className={`tab ${mode === "design" ? "active" : ""}`} onClick={() => setMode("design")}>⚡ Design a session</button>
+        <button className={`tab ${mode === "mine" ? "active" : ""}`} onClick={() => setMode("mine")}>📁 My sessions{mine.length ? ` (${mine.length})` : ""}</button>
+      </div>
+
+      {mode === "mine" && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0 }}>Your session repository</h2>
+            <input
+              style={{ minWidth: 220 }}
+              placeholder="Search by theme, title, exercise…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <p className="muted small">
+            Every session you design is saved to your team's season record automatically — tap one to reopen the full plan with diagrams.
+          </p>
+          {filtered.length === 0 && (
+            <p className="muted">{mine.length === 0 ? "Nothing yet — design your first session and it lands here." : "No sessions match that search."}</p>
+          )}
+          {filtered.slice(0, 40).map((e) => (
+            <ArtifactRow key={e.id} entry={e}>
+              <span className="kind">📋</span>
+              <div>
+                <div className="title">{e.title}</div>
+                <div className="muted small">{e.summary.slice(0, 150)}</div>
+              </div>
+              <span className="when">{new Date(e.date).toLocaleDateString()}</span>
+            </ArtifactRow>
+          ))}
+          {filtered.length > 40 && <p className="muted small">Showing 40 of {filtered.length} — narrow the search to find older ones.</p>}
+        </div>
+      )}
+
+      {mode === "design" && (
       <div className="card" style={{ marginBottom: 20 }}>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          🇺🇸 Sessions follow the U.S. Soccer play-practice-play arc — arrival activity → technique → skill under pressure → the game — with standard diagram notation.
+        </p>
         <div className="form-grid">
           <label className="field">
             Age group
@@ -133,15 +188,16 @@ export function SessionStudio() {
         </button>
         {error && <div className="error-box">{error}</div>}
       </div>
+      )}
 
-      {loading && (
+      {mode === "design" && loading && (
         <div className="gen-overlay">
           <span className="spinner" />
           <div>Your assistant coach is drawing up the session…</div>
         </div>
       )}
 
-      {plan && <SessionPlanView plan={plan} entryId={entryId} />}
+      {mode === "design" && plan && <SessionPlanView plan={plan} entryId={entryId} />}
     </div>
   );
 }

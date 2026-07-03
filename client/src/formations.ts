@@ -207,7 +207,7 @@ const scaleX = (p: Piece, f: number, lo = 6, hi = 94) => { p.x = clamp(50 + (p.x
 // No two pieces may occupy the same spot: nudge overlapping pairs apart.
 // A safety net so every one of the 20 formations stays readable in every
 // scenario, whatever the role mix.
-function resolveCollisions(ps: Piece[]): Piece[] {
+export function resolveCollisions(ps: Piece[]): Piece[] {
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
     for (let i = 0; i < ps.length; i++) {

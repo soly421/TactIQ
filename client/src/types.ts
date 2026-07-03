@@ -150,6 +150,7 @@ export interface SeasonEntry {
   title: string;
   summary: string;
   payload?: unknown;
+  hasArtifact?: boolean; // list endpoint strips payloads; this says one exists
 }
 
 export interface ChatMessage {

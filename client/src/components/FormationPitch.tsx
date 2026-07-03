@@ -1,8 +1,33 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormationPosition } from "../types";
 
+// AI positions carry no spacing guarantee — separate any that stack so a
+// live engine output can never draw two labeled dots on the same spot.
+function spreadPositions(positions: FormationPosition[]): FormationPosition[] {
+  const ps = positions.map((p) => ({ ...p }));
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = i + 1; j < ps.length; j++) {
+        const dx = ps[j].x - ps[i].x, dy = ps[j].y - ps[i].y;
+        const d = Math.hypot(dx, dy);
+        if (d < 6) {
+          const ux = d < 0.01 ? 1 : dx / d, uy = d < 0.01 ? 0 : dy / d;
+          const push = (6 - d) / 2 + 0.3;
+          ps[i].x -= ux * push; ps[i].y -= uy * push;
+          ps[j].x += ux * push; ps[j].y += uy * push;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return ps;
+}
+
 // Full-pitch vertical view (attacking toward the top). Click a position for details.
-export function FormationPitch({ positions }: { positions: FormationPosition[] }) {
+export function FormationPitch({ positions: raw }: { positions: FormationPosition[] }) {
+  const positions = useMemo(() => spreadPositions(raw), [raw]);
   const [selected, setSelected] = useState<FormationPosition | null>(null);
 
   return (
@@ -23,7 +48,7 @@ export function FormationPitch({ positions }: { positions: FormationPosition[] }
         {positions.map((pos, i) => {
           const x = Math.min(94, Math.max(6, pos.x));
           const y = Math.min(124, Math.max(6, (pos.y / 100) * 126 + 2));
-          const active = selected?.label === pos.label && selected?.x === pos.x;
+          const active = selected === pos;
           return (
             <g
               key={i}

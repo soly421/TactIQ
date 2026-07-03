@@ -3,9 +3,59 @@ import type { DrillDiagram, Point } from "../types";
 
 // Animated drill renderer: movements play as a looping, sequenced animation —
 // the ball travels pass lines, players travel run/dribble lines.
+// AI-generated diagrams carry no spacing guarantee — gently separate player
+// markers that land on top of each other so live outputs stay readable.
+function spread(groups: (Point[] | undefined)[]): Point[][] {
+  const all: Point[] = [];
+  const out = groups.map((g) => {
+    const copy = (g ?? []).map((p) => ({ ...p }));
+    all.push(...copy);
+    return copy;
+  });
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+        const d = Math.hypot(dx, dy);
+        if (d < 4) {
+          const ux = d < 0.01 ? 1 : dx / d, uy = d < 0.01 ? 0 : dy / d;
+          const push = (4 - d) / 2 + 0.2;
+          all[i].x -= ux * push; all[i].y -= uy * push;
+          all[j].x += ux * push; all[j].y += uy * push;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return out;
+}
+
+// Standard notation: a dribble is drawn as a wavy line. Build a path that
+// snakes along the straight line between two points.
+function wavyPath(f: Point, t: Point): string {
+  const dx = t.x - f.x, dy = t.y - f.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;       // along the line
+  const px = -uy, py = ux;                   // perpendicular
+  const waves = Math.max(2, Math.round(len / 6));
+  let d = `M ${f.x} ${f.y}`;
+  for (let i = 1; i <= waves; i++) {
+    const midT = (i - 0.5) / waves, endT = i / waves;
+    const amp = 1.3 * (i % 2 === 0 ? 1 : -1);
+    const cx = f.x + dx * midT + px * amp, cy = f.y + dy * midT + py * amp;
+    const ex = f.x + dx * endT, ey = f.y + dy * endT;
+    d += ` Q ${cx.toFixed(1)} ${cy.toFixed(1)}, ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+  }
+  void ux; void uy;
+  return d;
+}
+
 export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
   const [playing, setPlaying] = useState(true);
   const clamp = (p: Point) => ({ x: Math.min(97, Math.max(3, p.x)), y: Math.min(97, Math.max(3, p.y)) });
+  const [attackers, defenders, neutrals] = spread([diagram.attackers, diagram.defenders, diagram.neutrals]);
 
   const movements = diagram.movements ?? [];
   const STEP = 1.6; // seconds per movement
@@ -27,7 +77,7 @@ export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
 
   return (
     <div style={{ position: "relative" }}>
-      <svg viewBox="0 0 100 100" className="pitch-svg" style={{ background: "#0f4d27", aspectRatio: "1.3/1" }}>
+      <svg viewBox="0 0 100 100" className="pitch-svg" style={{ background: "#0f4d27", aspectRatio: "1/1" }}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffffff" />
@@ -54,12 +104,17 @@ export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
           const f = clamp(m.from);
           const t = clamp(m.to);
           const color = m.kind === "pass" ? "#ffe14d" : m.kind === "dribble" ? "#7ef0ff" : "#ffffff";
+          // standard notation: pass solid, run dashed, dribble wavy
+          if (m.kind === "dribble") {
+            return (
+              <path key={`m${i}`} d={wavyPath(f, t)} fill="none" stroke={color} strokeWidth="0.8" markerEnd="url(#arrow)" opacity="0.85" />
+            );
+          }
           return (
             <line
               key={`m${i}`}
-              className="mv-line"
               x1={f.x} y1={f.y} x2={t.x} y2={t.y}
-              stroke={color} strokeWidth="0.8" markerEnd="url(#arrow)" opacity="0.85"
+              stroke={color} strokeWidth="0.8" strokeDasharray={m.kind === "run" ? "3 2.5" : undefined} markerEnd="url(#arrow)" opacity="0.85"
             />
           );
         })}
@@ -71,7 +126,7 @@ export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
         })}
 
         {/* players */}
-        {diagram.attackers?.map((a, i) => {
+        {attackers.map((a, i) => {
           const p = clamp(a);
           return (
             <g key={`a${i}`} className="player-dot" style={{ animationDelay: `${i * 60}ms` }}>
@@ -80,7 +135,7 @@ export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
             </g>
           );
         })}
-        {diagram.defenders?.map((d, i) => {
+        {defenders.map((d, i) => {
           const p = clamp(d);
           return (
             <g key={`d${i}`} className="player-dot" style={{ animationDelay: `${i * 60 + 150}ms` }}>
@@ -89,7 +144,7 @@ export function PitchDiagram({ diagram }: { diagram: DrillDiagram }) {
             </g>
           );
         })}
-        {diagram.neutrals?.map((n, i) => {
+        {neutrals.map((n, i) => {
           const p = clamp(n);
           return <circle key={`n${i}`} className="player-dot" cx={p.x} cy={p.y} r="2.3" fill="#ffd65a" stroke="#fff" strokeWidth="0.5" />;
         })}

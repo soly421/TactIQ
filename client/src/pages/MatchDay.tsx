@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FilmRoom } from "./FilmRoom";
 import { getJSON, sendJSON, streamSSE } from "../api";
 import { goUpgrade, useEntitlements } from "../entitlements";
 import { Markdown } from "../components/Markdown";
@@ -9,7 +10,8 @@ import type { AwardResult, ChatMessage, GamePlan, SeasonEntry, SquadProfile } fr
 const SEGMENTS = [
   { id: "pre", label: "🗒️ Pre-Game" },
   { id: "live", label: "📣 Live Bench" },
-  { id: "post", label: "🎬 Post-Game" },
+  { id: "post", label: "📊 Post-Game" },
+  { id: "film", label: "🎬 Film Room" },
 ];
 
 // Strip stored-markdown noise for display in memory rows.
@@ -68,6 +70,7 @@ export function MatchDay() {
         </div>
       ))}
       {seg === "post" && <PostGame />}
+      {seg === "film" && <FilmRoom />}
       {gameMemory.length > 0 && (
         <div className="card" style={{ marginTop: 18 }}>
           <h3 style={{ marginTop: 0 }}>🧠 Recent game memory</h3>

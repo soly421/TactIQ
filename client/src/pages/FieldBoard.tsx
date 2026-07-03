@@ -28,9 +28,14 @@ export function FieldBoard() {
     const svg = svgWrap.current?.querySelector("svg");
     if (!svg) return { x: 50, y: 50 };
     const rect = svg.getBoundingClientRect();
+    // The viewBox is square; if CSS letterboxes it, map clicks against the
+    // rendered square, not the element box — otherwise placement drifts.
+    const side = Math.min(rect.width, rect.height);
+    const ox = (rect.width - side) / 2;
+    const oy = (rect.height - side) / 2;
     return {
-      x: Math.round(((e.clientX - rect.left) / rect.width) * 100),
-      y: Math.round(((e.clientY - rect.top) / rect.height) * 100),
+      x: Math.round(Math.min(100, Math.max(0, ((e.clientX - rect.left - ox) / side) * 100))),
+      y: Math.round(Math.min(100, Math.max(0, ((e.clientY - rect.top - oy) / side) * 100))),
     };
   }
 

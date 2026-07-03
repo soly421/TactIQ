@@ -837,7 +837,22 @@ api.delete("/teams/:id", (req, res) => {
 });
 
 api.get("/season", (req, res) => {
-  res.json({ season: getSeason(uid(req)) });
+  // Metadata only — full artifacts (session plans, game plans, formations)
+  // are fetched per-entry so the timeline stays light at any season length.
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+  res.json({
+    season: getSeason(uid(req), limit).map(({ payload, ...meta }) => ({ ...meta, hasArtifact: payload !== undefined })),
+  });
+});
+
+// The repository read: reopen any saved artifact exactly as it was generated.
+api.get("/season/:id", (req, res) => {
+  const entry = getSeason(uid(req), 500).find((e) => e.id === Number(req.params.id));
+  if (!entry) {
+    res.status(404).json({ error: "Entry not found" });
+    return;
+  }
+  res.json({ entry });
 });
 
 // ---- Settings / plan tier ----

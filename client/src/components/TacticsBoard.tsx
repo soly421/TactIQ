@@ -30,9 +30,14 @@ export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onR
   function toGrid(e: React.PointerEvent): { x: number; y: number } {
     const svg = svgRef.current!;
     const rect = svg.getBoundingClientRect();
+    // map against the rendered square so drags track the cursor exactly,
+    // whatever aspect the CSS gives the element
+    const side = Math.min(rect.width, rect.height);
+    const ox = (rect.width - side) / 2;
+    const oy = (rect.height - side) / 2;
     return {
-      x: Math.min(97, Math.max(3, ((e.clientX - rect.left) / rect.width) * 100)),
-      y: Math.min(97, Math.max(3, ((e.clientY - rect.top) / rect.height) * 100)),
+      x: Math.min(97, Math.max(3, ((e.clientX - rect.left - ox) / side) * 100)),
+      y: Math.min(97, Math.max(3, ((e.clientY - rect.top - oy) / side) * 100)),
     };
   }
 

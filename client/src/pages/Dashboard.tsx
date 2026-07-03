@@ -4,6 +4,7 @@ import { useGamify } from "../components/Gamify";
 import { XpChart } from "../components/XpChart";
 import { SessionPlanView } from "../components/SessionPlanView";
 import { getOfflinePlans, type SavedPlan } from "../savedPlans";
+import { ArtifactRow } from "../components/ArtifactView";
 import { TeamSwitcher } from "../components/TeamSwitcher";
 import { TouchlineDebate } from "../components/TouchlineDebate";
 import type { SeasonEntry, SquadProfile } from "../types";
@@ -257,21 +258,23 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
           <span className="small"><b style={{ color: "var(--turquoise)" }}>🏛️ Club theme this week:</b> {home.clubTheme} — sessions and advice align to it automatically.</span>
         </div>
       )}
+      {!squad && (
+        <div className="hero" style={{ padding: 20, marginBottom: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Two minutes of setup, a whole season of memory</h2>
+          <p className="sub" style={{ margin: "4px 0 14px" }}>
+            Give TactIQ your squad and schedule — every session, game plan, and answer becomes about <i>your</i> team.
+          </p>
+          <span style={{ display: "inline-flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn" onClick={() => go("team")}>🛡️ Set up my team</button>
+            <button className="btn ghost" onClick={() => go("team")}>📅 Import my schedule</button>
+          </span>
+        </div>
+      )}
       {home && <Touchline home={home} go={go} trainNext={trainNext} />}
       {home && <Briefing text={home.briefing} go={go} />}
       {home && <WeekStrip home={home} go={go} />}
-      <div style={{ marginBottom: 16 }}><TouchlineDebate /></div>
       {home && (home.record.w + home.record.d + home.record.l > 0 || home.sessionsLogged > 0) && <Vitals home={home} />}
-
-      {!squad && (
-        <div className="hero" style={{ padding: 18 }}>
-          <b>Set up your team →</b>
-          <p className="sub" style={{ margin: "4px 0 10px" }}>
-            Give TactIQ your squad and it remembers your whole season — every answer becomes about <i>your</i> team.
-          </p>
-          <button className="btn" onClick={() => go("team")}>Set Up My Team</button>
-        </div>
-      )}
+      {squad && <div style={{ marginBottom: 16 }}><TouchlineDebate /></div>}
 
       {progress?.quests && progress.quests.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -304,14 +307,14 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
         </div>
         {season.length === 0 && <p className="muted">Nothing yet — your first session starts the record.</p>}
         {season.slice(0, 8).map((e) => (
-          <div key={e.id} className="season-row">
+          <ArtifactRow key={e.id} entry={e}>
             <span className="kind">{KIND_ICON[e.kind] ?? "•"}</span>
             <div>
               <div className="title">{e.title}</div>
               <div className="muted small">{clean(e.summary).slice(0, 150)}</div>
             </div>
             <span className="when">{new Date(e.date).toLocaleDateString()}</span>
-          </div>
+          </ArtifactRow>
         ))}
       </div>
 

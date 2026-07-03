@@ -3,8 +3,14 @@ import { RateBar } from "./RateBar";
 import type { SessionPlan } from "../types";
 
 export function SessionPlanView({ plan, entryId }: { plan: SessionPlan; entryId?: number }) {
+  const isDemo = /\(demo/i.test(plan.title);
   return (
     <div className="fade-in">
+      {isDemo && (
+        <p className="small" style={{ color: "var(--gold)", margin: "0 0 10px" }}>
+          🧪 Demo sample — the drills and diagrams below are one fixed example, not built for your request. Add the engine key to generate for real.
+        </p>
+      )}
       <div className="hero" style={{ paddingBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 24 }}>{plan.title}</h1>

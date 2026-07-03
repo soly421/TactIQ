@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
+import { Playbook } from "./Playbook";
 
 interface Msg {
   role: "user" | "assistant";
@@ -18,6 +19,7 @@ const SUGGESTIONS = [
 
 export function Chat() {
   const { celebrate } = useGamify();
+  const [mode, setMode] = useState<"chat" | "guided">("chat");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [image, setImage] = useState<string | undefined>();
@@ -79,6 +81,14 @@ export function Chat() {
         </div>
       </div>
 
+      <div className="tabs" style={{ margin: "10px 0" }}>
+        <button className={`tab ${mode === "chat" ? "active" : ""}`} onClick={() => setMode("chat")}>💬 Chat</button>
+        <button className={`tab ${mode === "guided" ? "active" : ""}`} onClick={() => setMode("guided")} title="A structured coaching answer: the picture, the fix, how to train it, and what to say to your players">💡 Structured answer</button>
+      </div>
+
+      {mode === "guided" && <Playbook />}
+
+      {mode === "chat" && (
       <div className="chat-wrap">
         <div className="chat-scroll" ref={scrollRef}>
           {messages.length === 0 && (
@@ -128,6 +138,7 @@ export function Chat() {
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

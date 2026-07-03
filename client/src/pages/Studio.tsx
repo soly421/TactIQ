@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { SessionStudio } from "./SessionStudio";
 import { FormationLab } from "./FormationLab";
 import { FormationExplorer } from "./FormationExplorer";
-import { Playbook } from "./Playbook";
 import { FieldBoard } from "./FieldBoard";
 import { savePlanOffline } from "../savedPlans";
 import { goUpgrade, useEntitlements } from "../entitlements";
@@ -17,7 +16,6 @@ const SEGMENTS = [
   { id: "board", label: "🎯 Field Board" },
   { id: "formations", label: "🔷 Formations" },
   { id: "season", label: "🗓️ Season Plan" },
-  { id: "playbook", label: "💡 Playbook" },
 ];
 
 export function Studio() {
@@ -26,8 +24,8 @@ export function Studio() {
 
   return (
     <div className="fade-in">
-      <h1>The Labs</h1>
-      <p className="sub">Where everything gets visual: design sessions, scan hand-drawn plans, animate tactics on the Field Board, build formations and season curricula.</p>
+      <h1>Training Lab</h1>
+      <p className="sub">Design sessions, scan hand-drawn plans, work the tactics boards, and build your season — everything you make is saved to your team's record.</p>
       <div className="tabs">
         {SEGMENTS.map((s) => (
           <button key={s.id} className={`tab ${seg === s.id ? "active" : ""}`} onClick={() => setSeg(s.id)}>
@@ -46,7 +44,6 @@ export function Studio() {
           <button className="btn" onClick={() => void goUpgrade(ent.billingConfigured)}>👑 Upgrade to Pro</button>
         </div>
       ))}
-      {seg === "playbook" && <Playbook />}
     </div>
   );
 }

@@ -9,7 +9,6 @@ import { Advisors } from "./pages/Advisors";
 import { Library } from "./pages/Library";
 import { Studio } from "./pages/Studio";
 import { MatchDay } from "./pages/MatchDay";
-import { FilmRoom } from "./pages/FilmRoom";
 import { Team } from "./pages/Team";
 import { Club } from "./pages/Club";
 import { Community } from "./pages/Community";
@@ -22,9 +21,8 @@ const NAV = [
   { id: "chat", label: "Ask Coach Sam", emoji: "💬" },
   { id: "advisors", label: "Advisors", emoji: "🧠" },
   { id: "library", label: "Library", emoji: "📚" },
-  { id: "studio", label: "The Labs", emoji: "🔬" },
+  { id: "studio", label: "Training Lab", emoji: "🔬" },
   { id: "matchday", label: "Match Day", emoji: "📣" },
-  { id: "film", label: "Film Room", emoji: "🎬" },
   { id: "team", label: "My Team", emoji: "🛡️" },
   { id: "club", label: "Club", emoji: "🏛️" },
   { id: "community", label: "Community", emoji: "🏆" },
@@ -160,7 +158,6 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "library" && <Library />}
         {tab === "studio" && <Studio />}
         {tab === "matchday" && <MatchDay />}
-        {tab === "film" && <FilmRoom />}
         {tab === "team" && <Team />}
         {tab === "club" && <Club user={user} />}
         {tab === "community" && <Community />}
