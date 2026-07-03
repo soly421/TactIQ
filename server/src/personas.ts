@@ -378,3 +378,68 @@ When a question would be better served by one of TactIQ's specialist tools, give
 ${teamContext}
 ${BRAINSTORM_RULES}`;
 }
+
+// ---------------------------------------------------------------------------
+// The Staff Room: routing and prompts for advisor crosstalk.
+// ---------------------------------------------------------------------------
+
+// Topic routing: which school has the biggest stake in a question.
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  soler: ["possession", "build out", "build-up", "buildout", "playing out", "keep the ball", "positional", "rondo"],
+  vermeer: ["rotation", "positions", "versatile", "every position", "total football", "4v4"],
+  richter: ["press", "pressing", "gegenpress", "counter-press", "intensity", "win the ball back", "high press"],
+  benedetti: ["defend", "defending", "back line", "conceding", "clean sheet", "leaking", "zonal", "marking"],
+  baptista: ["dribbl", "1v1", "futsal", "flair", "tight space", "take players on", "skill moves", "joy"],
+  hughes: ["set piece", "corner", "free kick", "long throw", "direct", "target striker", "cross", "second ball"],
+  herrera: ["creative", "playmaker", "number 10", "packed defense", "break down", "unlock", "star player"],
+  fontaine: ["athletic", "physical", "outmuscled", "faster", "speed", "agility", "duel"],
+  whitfield: ["tryout", "college", "recruit", "showcase", "high school", "rankings", "competitive", "playing time"],
+  marchetti: ["halftime", "protect a lead", "game management", "substitution", "subs", "tournament", "momentum", "losing late", "close games"],
+  lindqvist: ["stats", "data", "metric", "measure", "track", "analytics"],
+  okonkwo: ["parent", "confidence", "anxious", "nervous", "culture", "morale", "benched", "quit", "fun", "burnout"],
+  reyes: ["counter", "sit deep", "absorb", "stronger opponent", "giant", "underdog", "low block"],
+  obrien: ["volunteer", "rec ", "first season", "overwhelmed", "simple practice"],
+  tanaka: ["technique", "technical", "first touch", "weak foot", "ball mastery", "homework", "sloppy"],
+  ibarra: ["back three", "wingback", "verticality", "toothless", "sterile", "no penetration", "control"],
+};
+
+// Every advisor's designated sparring partner: the school most likely to
+// give the OPPOSITE advice on their home topic. Directional from the
+// top-scored advisor, so pairs stay philosophically sharp.
+const OPPONENT_OF: Record<string, string> = {
+  soler: "hughes", hughes: "soler",
+  richter: "marchetti", marchetti: "richter",
+  baptista: "tanaka", tanaka: "baptista",
+  herrera: "benedetti", benedetti: "herrera",
+  vermeer: "whitfield", whitfield: "vermeer",
+  reyes: "soler",
+  fontaine: "whitfield",
+  okonkwo: "marchetti",
+  lindqvist: "herrera",
+  obrien: "marchetti",
+  ibarra: "herrera",
+};
+
+// Pick the two most philosophically opposed voices for this question.
+export function routeDebatePair(question: string): [Advisor, Advisor] {
+  const t = question.toLowerCase();
+  let bestId = "soler";
+  let bestScore = 0;
+  for (const [id, kws] of Object.entries(TOPIC_KEYWORDS)) {
+    const score = kws.reduce((n, k) => n + (t.includes(k) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; bestId = id; }
+  }
+  const a = getAdvisor(bestId)!;
+  const b = getAdvisor(OPPONENT_OF[bestId] ?? "hughes")!;
+  return [a, b];
+}
+
+// The debate prompt: answer from doctrine, preempt the named opponent once.
+export function debateAdvisorPrompt(advisor: Advisor, opponent: Advisor, teamContext: string): string {
+  return `${advisorSystemPrompt(advisor, teamContext)}
+
+STAFF DEBATE MODE: the coach has put one question to the staff. ${opponent.name} (${opponent.tagline}) is answering the same question and will very likely argue differently.
+- Answer from YOUR doctrine in under 130 words: your recommendation, the picture behind it, why your school is right for THIS team.
+- Preempt ${opponent.name}'s likely objection ONCE, respectfully, by school of thought (never by real coaches' names).
+- No preamble, no restating the question — straight into your read.`;
+}

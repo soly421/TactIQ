@@ -178,13 +178,13 @@ export function Auth({ onAuthed }: { onAuthed: (user: User) => void }) {
               {form.clubChoice === "join" && (
                 <label className="field" style={{ marginBottom: 12 }}>
                   Club code
-                  <input value={form.clubCode} placeholder="e.g. LMSC421" onChange={(e) => set("clubCode", e.target.value)} />
+                  <input value={form.clubCode} placeholder="e.g. RIVER421" onChange={(e) => set("clubCode", e.target.value)} />
                 </label>
               )}
               {form.clubChoice === "create" && (
                 <label className="field" style={{ marginBottom: 12 }}>
                   Club name
-                  <input value={form.clubName} placeholder="e.g. Lower Merion SC" onChange={(e) => set("clubName", e.target.value)} />
+                  <input value={form.clubName} placeholder="e.g. Riverside SC" onChange={(e) => set("clubName", e.target.value)} />
                 </label>
               )}
             </>

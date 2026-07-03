@@ -25,6 +25,7 @@ interface HomeData {
   sessionsLogged: number;
   suggestion: { theme: string; reason: string };
   briefing: string;
+  staffMemo?: string;
 }
 
 function daysUntil(date: string): string | null {
@@ -272,6 +273,15 @@ export function Dashboard({ go }: { go: (tab: string) => void }) {
       )}
       {home && <Touchline home={home} go={go} trainNext={trainNext} />}
       {home && <Briefing text={home.briefing} go={go} />}
+      {home?.staffMemo && (
+        <div className="card" style={{ marginBottom: 16, borderLeft: "3px solid var(--gold)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h2 style={{ margin: 0 }}>🗣️ Staff memo</h2>
+            <span className="muted small">Coach Sam + your most-consulted advisors · weekly</span>
+          </div>
+          <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{home.staffMemo.replace(/\*\*(.+?)\*\*/g, "$1")}</div>
+        </div>
+      )}
       {home && <WeekStrip home={home} go={go} />}
       {home && (home.record.w + home.record.d + home.record.l > 0 || home.sessionsLogged > 0) && <Vitals home={home} />}
       {squad && <div style={{ marginBottom: 16 }}><TouchlineDebate /></div>}

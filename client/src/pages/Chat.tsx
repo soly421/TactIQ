@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getJSON, streamSSE } from "../api";
+import { getJSON, sendJSON, streamSSE } from "../api";
 import { Markdown } from "../components/Markdown";
 import { useGamify } from "../components/Gamify";
 import { Playbook } from "./Playbook";
@@ -58,11 +58,30 @@ const SUGGESTIONS = [
   "We play the top team Sunday. They press high. What's my game plan?",
 ];
 
+interface DebateVoice {
+  advisorId: string;
+  name: string;
+  emoji: string;
+  tagline: string;
+  text: string;
+}
+
+interface StaffDebate {
+  a: DebateVoice;
+  b: DebateVoice;
+  verdict: string;
+}
+
 export function Chat() {
   const { celebrate } = useGamify();
   const [mode, setMode] = useState<"chat" | "guided">("chat");
   const [advisors, setAdvisors] = useState<AdvisorMeta[]>([]);
   const [usedOpinions, setUsedOpinions] = useState<string[]>([]);
+  const [staffOpen, setStaffOpen] = useState(false);
+  const [staffQ, setStaffQ] = useState("");
+  const [staffBusy, setStaffBusy] = useState(false);
+  const [staffError, setStaffError] = useState("");
+  const [debate, setDebate] = useState<StaffDebate | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [image, setImage] = useState<string | undefined>();
@@ -152,6 +171,23 @@ export function Chat() {
     );
   }
 
+  // Take it to the staff: two opposed advisors argue the question, Sam
+  // breaks the tie against this team's memory. Pro; costs three messages.
+  async function runDebate() {
+    if (!staffQ.trim() || staffBusy) return;
+    setStaffBusy(true);
+    setStaffError("");
+    setDebate(null);
+    try {
+      const r = await sendJSON<StaffDebate & { award: import("../types").AwardResult }>("/api/staff-debate", { question: staffQ.trim() });
+      setDebate(r);
+      celebrate(r.award);
+    } catch (e) {
+      setStaffError(e instanceof Error ? e.message : "The staff room hit a snag");
+    }
+    setStaffBusy(false);
+  }
+
   // Chips appear once Sam has answered: which schools of thought have a
   // stake in this topic?
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.advisor && m.content);
@@ -174,7 +210,63 @@ export function Chat() {
       <div className="tabs" style={{ margin: "10px 0" }}>
         <button className={`tab ${mode === "chat" ? "active" : ""}`} onClick={() => setMode("chat")}>💬 Chat</button>
         <button className={`tab ${mode === "guided" ? "active" : ""}`} onClick={() => setMode("guided")} title="A structured coaching answer: the picture, the fix, how to train it, and what to say to your players">💡 Structured answer</button>
+        <button
+          className={`tab ${staffOpen ? "active" : ""}`}
+          title="Two opposed coaching minds argue your question — Coach Sam breaks the tie for YOUR team (Pro)"
+          onClick={() => {
+            setStaffOpen(!staffOpen);
+            const lastQ = [...messages].reverse().find((m) => m.role === "user");
+            if (!staffOpen && !staffQ && lastQ) setStaffQ(lastQ.content);
+          }}
+        >
+          🗣️ Take it to the staff
+        </button>
       </div>
+
+      {staffOpen && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              style={{ flex: 1, minWidth: 260 }}
+              value={staffQ}
+              placeholder="One question for the staff — e.g. should we keep playing out under their press, or go direct?"
+              onChange={(e) => setStaffQ(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void runDebate()}
+            />
+            <button className="btn" disabled={staffBusy || !staffQ.trim()} onClick={() => void runDebate()}>
+              {staffBusy ? "The staff is arguing…" : "🗣️ Run the debate"}
+            </button>
+          </div>
+          <p className="muted small" style={{ margin: "6px 0 0" }}>
+            Two opposed schools of thought answer, then Coach Sam breaks the tie using your team's season memory. Costs 3 messages · Pro.
+          </p>
+          {staffError && (
+            <div className="error-box">
+              {staffError}
+              {/Pro|upgrade/i.test(staffError) && (
+                <button className="btn" style={{ marginLeft: 8, fontSize: 11.5, padding: "4px 10px" }} onClick={() => window.dispatchEvent(new Event("tactiq:pricing"))}>👑 Go Pro</button>
+              )}
+            </div>
+          )}
+          {debate && (
+            <div className="fade-in" style={{ marginTop: 12 }}>
+              <div className="grid cols-2" style={{ alignItems: "start" }}>
+                {[debate.a, debate.b].map((v) => (
+                  <div key={v.advisorId} className="card" style={{ borderTop: "3px solid var(--gold)" }}>
+                    <div className="small" style={{ fontWeight: 800, marginBottom: 2 }}>{v.emoji} {v.name}</div>
+                    <div className="muted small" style={{ marginBottom: 8 }}>{v.tagline}</div>
+                    <Markdown text={v.text} />
+                  </div>
+                ))}
+              </div>
+              <div className="card" style={{ marginTop: 10, borderLeft: "3px solid var(--accent)" }}>
+                <div className="small" style={{ fontWeight: 800, marginBottom: 6 }}>🧡 Coach Sam — the verdict</div>
+                <Markdown text={debate.verdict} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {mode === "guided" && <Playbook />}
 

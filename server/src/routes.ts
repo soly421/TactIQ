@@ -1,15 +1,15 @@
 import { Router } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ADVISORS, advisorSystemPrompt, assistantSystemPrompt, customAdvisorSystemPrompt, getAdvisor } from "./personas.js";
+import { debateAdvisorPrompt, routeDebatePair, ADVISORS, advisorSystemPrompt, assistantSystemPrompt, customAdvisorSystemPrompt, getAdvisor } from "./personas.js";
 import { baseSystemPrompt } from "./knowledge.js";
 import { SESSION_PLAN_SCHEMA, FORMATION_ANALYSIS_SCHEMA, GAME_PLAN_SCHEMA, SEASON_PLAN_SCHEMA } from "./schemas.js";
-import { bandFor as bandForAgeServer, generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
+import { generateText, bandFor as bandForAgeServer, generateStructured, streamToSSE, teamContext, userContent } from "./generate.js";
 import { streamText } from "./providers.js";
 import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
-import { setUserTz, userToday,
+import { topAdvisorNames, setUserTz, userToday,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
   activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
@@ -1023,6 +1023,96 @@ api.post("/debate/vote", (req, res) => {
   res.json({ ...debateState(userId), award: gamify });
 });
 
+// ---- The Staff Room: two opposed advisors argue the coach's question,
+// Coach Sam breaks the tie against THIS team's memory ----
+api.post("/staff-debate", async (req, res) => {
+  const userId = uid(req);
+  if (planOf(userId) !== "pro") {
+    res.status(403).json(upgradeError("Staff debates — two opposed coaching minds arguing YOUR question, with Coach Sam's tiebreak — are a Pro feature."));
+    return;
+  }
+  const question = String(req.body?.question ?? "").trim().slice(0, 400);
+  if (!question) {
+    res.status(400).json({ error: "Ask the staff a question" });
+    return;
+  }
+  // a debate is three voices — it costs three messages
+  const limit = dailyLimit(userId);
+  if (getUsage(userId) + 3 > limit) {
+    res.status(429).json({ error: quotaError(userId) });
+    return;
+  }
+  incrementUsage(userId); incrementUsage(userId); incrementUsage(userId);
+
+  const [advA, advB] = routeDebatePair(question);
+  const ctx = teamContext(userId);
+  try {
+    const [aText, bText] = await Promise.all([
+      generateText({
+        tier: tierFor(planOf(userId), "chat"),
+        userId,
+        system: debateAdvisorPrompt(advA, advB, ctx),
+        user: question,
+        maxTokens: 500,
+        mock: `[Demo debate — set ANTHROPIC_API_KEY for the live staff room]\n\nMy school's answer: control the situation structurally before you chase outcomes. With a live engine this reads YOUR question and roster and argues my actual doctrine — and disagrees with ${advB.name} where our schools genuinely split.`,
+      }),
+      generateText({
+        tier: tierFor(planOf(userId), "chat"),
+        userId,
+        system: debateAdvisorPrompt(advB, advA, ctx),
+        user: question,
+        maxTokens: 500,
+        mock: `[Demo debate]\n\nMy school sees it differently: solve the immediate percentages first. Live, this is my doctrine arguing with ${advA.name}'s — two real philosophies, one question, your team.`,
+      }),
+    ]);
+    const verdict = await generateText({
+      tier: tierFor(planOf(userId), "chat"),
+      userId,
+      system: `${assistantSystemPrompt(ctx)}
+
+STAFF VERDICT MODE: two of your specialist advisors have answered the coach's question and disagree (or differ in emphasis). Your job is the tiebreak.
+- Side with one, or synthesize — but COMMIT, and ground the call in THIS team's memory (age, roster, results, what they've trained).
+- Steal the best single idea from the losing side and say so.
+- Under 120 words. End with ONE concrete action for the next session or game.`,
+      user: `The coach asked the staff: "${question}"
+
+${advA.name} (${advA.tagline}) argued:
+${aText}
+
+${advB.name} (${advB.tagline}) argued:
+${bText}
+
+Give your verdict.`,
+      maxTokens: 450,
+      mock: "[Demo verdict]\n\nFor your team, I'd lean toward the first read — but steal the set-piece idea from the second. With a live engine this verdict is grounded in your actual roster, results, and training history. Next session: 20 minutes on the picture we just argued about.",
+    });
+
+    const gamify = award(userId, "staff");
+    const entryId = addSeasonEntry(userId, {
+      kind: "chat",
+      title: `Staff debate: ${snip(question, 60)}`,
+      summary: `${advA.name}: ${snip(aText, 90)} | ${advB.name}: ${snip(bText, 90)} | Verdict: ${snip(verdict, 110)}`,
+      payload: {
+        staffDebate: true,
+        question,
+        a: { advisorId: advA.id, name: advA.name, emoji: advA.emoji, tagline: advA.tagline, text: aText },
+        b: { advisorId: advB.id, name: advB.name, emoji: advB.emoji, tagline: advB.tagline, text: bText },
+        verdict,
+      },
+    });
+    res.json({
+      a: { advisorId: advA.id, name: advA.name, emoji: advA.emoji, tagline: advA.tagline, text: aText },
+      b: { advisorId: advB.id, name: advB.name, emoji: advB.emoji, tagline: advB.tagline, text: bText },
+      verdict,
+      award: gamify,
+      entryId,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "The staff room hit a snag — try again." });
+  }
+});
+
 // ---- Entitlements: what this coach's plan includes, with live usage ----
 api.get("/entitlements", (req, res) => {
   const userId = uid(req);
@@ -1135,6 +1225,7 @@ api.get("/home", async (req, res) => {
     sessionsLogged: recentSessions.length,
     suggestion,
     briefing: await dailyBriefing(userId, { record, lastMatch, nextGame, suggestion }),
+    staffMemo: await staffMemo(userId),
   });
 });
 
@@ -1181,6 +1272,51 @@ api.post("/tz", (req, res) => {
   if (Number.isFinite(offset)) setUserTz(uid(req), offset);
   res.json({ ok: true });
 });
+
+// The weekly staff memo: Coach Sam plus the coach's two most-consulted
+// advisors on this week's trends — one model call, cached per week.
+async function staffMemo(userId: number): Promise<string> {
+  const week = weekStart();
+  const key = `memo:${userId}:${activeTeamId(userId) ?? 0}:${week}:${hasAnyProvider() ? "live" : "demo"}`;
+  const cached = kvGet(key);
+  if (cached) return cached;
+
+  const consulted = topAdvisorNames(userId, 2);
+  const staff = consulted.length
+    ? ADVISORS.filter((a) => consulted.includes(a.name)).slice(0, 2)
+    : [];
+  // No consultations yet — no memo; the staff room has to be earned into.
+  if (staff.length === 0) return "";
+
+  const staffLine = staff.map((a) => `${a.emoji} ${a.name} (${a.tagline})`).join(" and ");
+  let text: string;
+  if (!hasAnyProvider()) {
+    text = `**Staff memo — week of ${week}**\nThis week's staff table: ${staffLine}. With a live engine key, the three of us write you a real memo here every Monday — the week in one line, the trend we're watching in your season record, one note from each advisor in their own voice, and the priority for this week's training.`;
+  } else {
+    try {
+      text = await generateText({
+        tier: "light",
+        userId,
+        system: `${assistantSystemPrompt(teamContext(userId))}
+
+STAFF MEMO MODE: you are writing the coach's Monday staff memo together with the two advisors they consult most: ${staffLine}. Exactly five short lines, markdown, each on its own line:
+1. **The week:** last game/training week in one honest line (from team memory).
+2. **Trend:** the one pattern in the season record worth watching.
+3. One-line note from the first advisor, in their voice, prefixed with their name.
+4. One-line note from the second advisor, in their voice, prefixed with their name.
+5. **This week:** the single training priority, with a Library exercise named if natural.
+Ground everything in the team memory above. No preamble, no sign-off.`,
+        user: `Write this week's staff memo (week of ${week}).`,
+        maxTokens: 400,
+        mock: "",
+      });
+    } catch {
+      return "";
+    }
+  }
+  kvSet(key, text);
+  return text;
+}
 
 // ---- Gamified progress ----
 api.get("/progress", (req, res) => {

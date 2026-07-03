@@ -19,8 +19,36 @@ function isGamePlan(p: unknown): p is GamePlan {
   return !!p && typeof p === "object" && Array.isArray((p as GamePlan).keysToTheGame);
 }
 
+interface StaffDebatePayload {
+  staffDebate: true;
+  question: string;
+  a: { name: string; emoji: string; tagline: string; text: string };
+  b: { name: string; emoji: string; tagline: string; text: string };
+  verdict: string;
+}
+function isStaffDebate(p: unknown): p is StaffDebatePayload {
+  return !!p && typeof p === "object" && (p as StaffDebatePayload).staffDebate === true;
+}
+
 export function ArtifactBody({ payload }: { payload: unknown }) {
   if (isSessionPlan(payload)) return <SessionPlanView plan={payload} />;
+  if (isStaffDebate(payload)) {
+    return (
+      <div>
+        <p className="small" style={{ fontWeight: 700 }}>The coach asked the staff: “{payload.question}”</p>
+        {[payload.a, payload.b].map((v, i) => (
+          <div key={i} className="card" style={{ margin: "8px 0", borderTop: "3px solid var(--gold)" }}>
+            <div className="small" style={{ fontWeight: 800 }}>{v.emoji} {v.name} <span className="muted" style={{ fontWeight: 400 }}>— {v.tagline}</span></div>
+            <p className="small" style={{ whiteSpace: "pre-wrap", margin: "6px 0 0" }}>{v.text}</p>
+          </div>
+        ))}
+        <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
+          <div className="small" style={{ fontWeight: 800 }}>🧡 Coach Sam — the verdict</div>
+          <p className="small" style={{ whiteSpace: "pre-wrap", margin: "6px 0 0" }}>{payload.verdict}</p>
+        </div>
+      </div>
+    );
+  }
   if (isFormation(payload)) {
     return (
       <div>

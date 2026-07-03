@@ -170,6 +170,28 @@ interface StructuredArgs<T> {
 
 // Structured JSON generation, schema-constrained on whichever provider answers
 // (output_config on Anthropic, response_format json_schema on OpenAI).
+// Plain-text generation for multi-voice features (staff debates, memos):
+// no SSE, no schema — one prompt in, one string out, mock-gated like the rest.
+export async function generateText(args: {
+  tier: Tier;
+  userId: number;
+  system: string;
+  user: string;
+  maxTokens?: number;
+  mock: string;
+}): Promise<string> {
+  if (!hasAnyProvider()) return args.mock;
+  const result = await streamText({
+    tier: args.tier,
+    userId: args.userId,
+    system: args.system,
+    messages: [{ role: "user", content: args.user }],
+    maxTokens: args.maxTokens ?? 600,
+    onDelta: () => {},
+  });
+  return result.text.trim();
+}
+
 export async function generateStructured<T>(args: StructuredArgs<T>): Promise<T> {
   if (!hasAnyProvider()) return args.mock;
 

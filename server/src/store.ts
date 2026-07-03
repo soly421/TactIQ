@@ -153,6 +153,24 @@ export function getSeasonByKinds(userId: number, kinds: string[], limit: number)
   return rows.map((r) => ({ ...r, payload: r.payload ? JSON.parse(r.payload) : undefined }));
 }
 
+// The coach's most-consulted advisors, from real usage: brainstorms and
+// second opinions in the season record. Feeds the weekly staff memo.
+export function topAdvisorNames(userId: number, n = 2): string[] {
+  const teamId = activeTeamId(userId);
+  const rows = db
+    .prepare(
+      `SELECT title FROM season_entries WHERE user_id = ? AND (team_id IS NULL OR team_id = ?) AND kind = 'chat'
+       AND (title LIKE 'Brainstorm with %' OR title LIKE 'Second opinion from %') ORDER BY id DESC LIMIT 200`,
+    )
+    .all(userId, teamId ?? -1) as { title: string }[];
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const name = r.title.replace(/^Brainstorm with /, "").replace(/^Second opinion from /, "");
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name]) => name);
+}
+
 // ---- progress ----
 export function getProgress(userId: number): Progress {
   let row = db.prepare("SELECT * FROM progress WHERE user_id = ?").get(userId) as

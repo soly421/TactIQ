@@ -11,9 +11,10 @@ export function streakFreezeAvailable(userId: number): boolean {
 
 export const FREE_DAILY_MESSAGES = 30;
 
-export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film" | "board" | "debate";
+export type XpAction = "chat" | "session" | "formation" | "guidance" | "squad" | "advisor-built" | "library" | "matchday" | "rate" | "film" | "board" | "debate" | "staff";
 
 const XP_RULES: Record<XpAction, number> = {
+  staff: 12,
   chat: 5,
   session: 50,
   formation: 40,

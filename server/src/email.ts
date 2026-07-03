@@ -1,5 +1,6 @@
+import { weekStart } from "./community.js";
 import { db } from "./db.js";
-import { getSeason, kvGet, kvSet } from "./store.js";
+import { activeTeamId, getSeason, kvGet, kvSet } from "./store.js";
 
 // ============================================================================
 // Email: Resend-backed (plain HTTPS, no SDK). Everything degrades to a no-op
@@ -58,10 +59,18 @@ async function sendWeeklyDigests(): Promise<void> {
       : lastSession
         ? `Your last session was <b>${lastSession.title}</b>. Ready to build the progression on top of it?`
         : `Your assistant coach is ready to plan this week's first session.`;
+    // If this week's staff memo has already been generated, ride it along —
+    // the memo is the strongest Monday hook we have.
+    const memo = kvGet(`memo:${u.id}:${activeTeamId(u.id) ?? 0}:${weekStart()}:live`);
+    const memoHtml = memo
+      ? `<div style="border-left:3px solid #e8b64c;padding:8px 12px;margin:10px 0;background:#faf7f0">${memo
+          .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+          .replace(/\n/g, "<br/>")}</div>`
+      : "";
     const ok = await sendEmail(
       u.email,
       "Your week of coaching, planned in 2 minutes",
-      `<p>Coach ${u.name},</p><p>${hook}</p>
+      `<p>Coach ${u.name},</p><p>${hook}</p>${memoHtml}
        <p><a href="${appUrl()}">Open TactIQ</a> — Ask Coach Sam, or generate this week's session from the Library.</p>
        <p style="color:#888;font-size:12px">TactIQ — your AI assistant coach. You get this on Mondays because you coached recently.</p>`,
     );

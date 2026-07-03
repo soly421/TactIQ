@@ -237,12 +237,12 @@ export function Club({ user }: { user: User }) {
           {joinForm.mode === "join" ? (
             <label className="field" style={{ marginBottom: 14 }}>
               Club code
-              <input value={joinForm.clubCode} placeholder="e.g. LMSC421" onChange={(e) => setJoinForm((f) => ({ ...f, clubCode: e.target.value }))} />
+              <input value={joinForm.clubCode} placeholder="e.g. RIVER421" onChange={(e) => setJoinForm((f) => ({ ...f, clubCode: e.target.value }))} />
             </label>
           ) : (
             <label className="field" style={{ marginBottom: 14 }}>
               Club name
-              <input value={joinForm.clubName} placeholder="e.g. Lower Merion SC" onChange={(e) => setJoinForm((f) => ({ ...f, clubName: e.target.value }))} />
+              <input value={joinForm.clubName} placeholder="e.g. Riverside SC" onChange={(e) => setJoinForm((f) => ({ ...f, clubName: e.target.value }))} />
             </label>
           )}
           <button className="btn" onClick={() => void joinOrCreate()}>Continue →</button>
@@ -373,7 +373,7 @@ export function Club({ user }: { user: User }) {
               <h3>Upload a club session</h3>
               <label className="field" style={{ marginBottom: 10 }}>
                 Title
-                <input value={upload.title} onChange={(e) => setUpload((u) => ({ ...u, title: e.target.value }))} placeholder="e.g. Club warmup standard: The LMSC Arrival Circuit" />
+                <input value={upload.title} onChange={(e) => setUpload((u) => ({ ...u, title: e.target.value }))} placeholder="e.g. Club warmup standard: The Arrival Circuit" />
               </label>
               <label className="field" style={{ marginBottom: 10 }}>
                 One-line description
