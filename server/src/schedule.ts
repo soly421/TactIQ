@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, type AuthedRequest } from "./auth.js";
-import { activeTeamId,
+import { countScheduleEvents, activeTeamId,
   addScheduleEvent, deleteScheduleEvent, getSquad, getTeamSnapToken, kvGet, kvSet,
   replaceScheduleEvents, saveSquad, setTeamSnapToken, upcomingEvents, type ScheduleEvent,
 } from "./store.js";
@@ -242,6 +242,10 @@ scheduleRouter.post("/event", (req, res) => {
   const { start, title, kind, opponent, location } = req.body ?? {};
   if (!start || !title) {
     res.status(400).json({ error: "start and title are required" });
+    return;
+  }
+  if (countScheduleEvents(uid(req)) >= 400) {
+    res.status(400).json({ error: "That's a full season and then some — remove old events before adding more." });
     return;
   }
   addScheduleEvent(uid(req), {

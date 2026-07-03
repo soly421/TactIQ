@@ -25,12 +25,17 @@ export type Provider = "anthropic" | "openai";
 export const TIER_INFO: Record<Tier, { label: string; blurb: string }> = {
   light: { label: "Light Tactical", blurb: "Fast, cost-efficient engine for everyday coaching chat" },
   standard: { label: "Standard Tactical", blurb: "Strong engine for structured session and formation visualizations" },
-  deep: { label: "Deep Tactical", blurb: "Flagship engine — maximum tactical depth on every output (Pro)" },
+  deep: { label: "Deep Tactical", blurb: "Flagship engine — maximum depth on sessions, game plans, and formations (Pro)" },
 };
 
 export function tierFor(plan: Plan, kind: EngineKind): Tier {
   if (process.env.TACTIQ_TIER) return process.env.TACTIQ_TIER as Tier;
-  if (plan === "pro") return "deep";
+  // Pro: Standard (Sonnet 5) for conversation, Deep (Fable 5) for the
+  // structured artifacts — sessions, game plans, formations — where the
+  // depth actually shows. The explicit Deep Tactical toggle on the board
+  // and formation reports also reaches Deep. Free: Light chat, Standard
+  // builds. The unit economics of a $14.99 plan demand exactly this split.
+  if (plan === "pro") return kind === "chat" ? "standard" : "deep";
   return kind === "chat" ? "light" : "standard";
 }
 
@@ -89,9 +94,19 @@ function anthropicExtras(model: string): { betas?: string[]; fallbacks?: { model
   return {};
 }
 
-// The static system prompt (~20k chars of curriculum) is identical across
-// requests — cache it on Anthropic's side to cut input cost ~90% on hits.
+// Two cache breakpoints: the static curriculum base (~6k tokens, identical
+// across ALL users and features) caches independently of the per-team
+// dynamic suffix — so every chat turn reads the base from cache even
+// though team memory mutates between turns.
+import { baseSystemPrompt } from "./knowledge.js";
 function anthropicSystem(system: string): Anthropic.Beta.BetaTextBlockParam[] {
+  const base = baseSystemPrompt();
+  if (system.startsWith(base) && system.length > base.length) {
+    return [
+      { type: "text", text: base, cache_control: { type: "ephemeral" } },
+      { type: "text", text: system.slice(base.length), cache_control: { type: "ephemeral" } },
+    ];
+  }
   return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
 }
 

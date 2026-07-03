@@ -76,7 +76,7 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
               <><b>$14.99</b><span className="muted small"> /mo</span></>
             )}
           </div>
-          <p className="muted small">The flagship Deep Tactical engine on every output, all 16 advisors, unlimited Library and Film Room, Live Bench, season planner, up to 8 teams.</p>
+          <p className="muted small">The flagship Deep Tactical engine on every session, game plan, and formation build (plus on-demand deep reads on the board), all 16 advisors, unlimited Library and Film Room, Live Bench, season planner, up to 8 teams.</p>
           <button className="btn" style={{ marginTop: "auto" }} disabled={busy || isPro} onClick={() => void checkout()}>
             {isPro ? "✓ You're Pro" : busy ? "One moment…" : `Go Pro — ${interval === "year" ? "$119.88/yr" : "$14.99/mo"}`}
           </button>

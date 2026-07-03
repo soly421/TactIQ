@@ -12,11 +12,21 @@ import { availableProviders, engineSummary, hasAnyProvider } from "./providers.j
 import { emailConfigured, startDigestScheduler } from "./email.js";
 
 const app = express();
+app.set("trust proxy", 1); // Render fronts us — req.ip is the real client, not spoofable XFF
 app.use(cors());
 // Stripe webhook must see the exact raw body for signature verification —
 // mounted BEFORE the JSON parser.
 app.post("/api/billing/webhook", express.raw({ type: "application/json" }), (req, res) => void stripeWebhook(req, res));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "25mb" }));
+
+// Oversized uploads get a coach-friendly answer, not a bare parser error.
+app.use((err: Error & { type?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err?.type === "entity.too.large") {
+    res.status(413).json({ error: "That upload is too large — use a smaller photo or trim the clip to fewer frames." });
+    return;
+  }
+  next(err);
+});
 app.use("/api/auth", authRouter);
 app.use("/api/club", clubRouter);
 app.use("/api/billing", billingRouter);

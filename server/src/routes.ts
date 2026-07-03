@@ -9,7 +9,7 @@ import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
   MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN,
 } from "./mock.js";
-import { topAdvisorNames, setUserTz, userToday,
+import { getSeasonEntryById, refundMessage, topAdvisorNames, setUserTz, userToday,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
   activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
@@ -46,7 +46,7 @@ const tryCounts = new Map<string, { day: string; n: number }>();
 const TRY_PER_DAY = 3;
 
 api.post("/try/session", async (req, res) => {
-  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "?";
+    const ip = req.ip ?? "?"; // trust-proxy resolves the real client — headers can't spoof the cap
   const day = new Date().toISOString().slice(0, 10);
   const entry = tryCounts.get(ip);
   const n = entry?.day === day ? entry.n : 0;
@@ -114,6 +114,13 @@ function consumeStructured(userId: number): boolean {
   if (used >= STRUCTURED_PER_DAY[planOf(userId)]) return false;
   kvSet(key, String(used + 1));
   return true;
+}
+
+// A failed generation must not cost the coach a slot: every cap that was
+// consumed optimistically gets refunded in the endpoint's catch block.
+function refundStructured(userId: number): void {
+  const key = `structcap:${userId}:${userToday(userId)}`;
+  kvSet(key, String(Math.max(0, Number(kvGet(key) ?? 0) - 1)));
 }
 
 const STRUCTURED_LIMIT_MSG = "Daily build limit reached — that's a lot of sessions, coach! It resets tomorrow.";
@@ -209,6 +216,7 @@ api.post("/chat", async (req, res) => {
     system,
     messages: messages as Anthropic.Beta.BetaMessageParam[],
     maxTokens: 6000,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_CHAT_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
@@ -250,6 +258,7 @@ api.post("/assistant", async (req, res) => {
     system: assistantSystemPrompt(teamContext(userId)),
     messages: apiMessages,
     maxTokens: 6000,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_CHAT_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
@@ -304,7 +313,8 @@ You design world-class youth training sessions. Every drill must include a rende
     res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Generation failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
@@ -337,7 +347,8 @@ The coach has photographed a hand-drawn training session (whiteboard, notebook, 
     res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Scan failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Scan failed — nothing was counted against your daily limit. Try a clearer photo." });
   }
 });
 
@@ -367,7 +378,7 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
 - Games per week: ${gamesPerWeek || 1}
 - Season focus (coach's words): ${focus || "overall development with the team's preferred style"}`,
       schema: SEASON_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      maxTokens: 20000,
+      maxTokens: 14000,
       mock: { ...MOCK_SEASON_PLAN, title: `${MOCK_SEASON_PLAN.title} (demo sample)`, ageGroup: squad?.ageGroup ?? MOCK_SEASON_PLAN.ageGroup },
     });
     const gamify = award(userId, "session");
@@ -375,7 +386,8 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
     res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Generation failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
@@ -441,7 +453,8 @@ Give it a specific, evocative title of your own (not the catalog label).`,
     res.json({ plan: plan_, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Generation failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
@@ -478,7 +491,7 @@ You recommend formations and game models for youth teams. Positions are placed o
 - Squad characteristics: ${squadNotes || "typical mixed-ability youth squad"}
 - Opponent/league context: ${opponentNotes || "none"}`,
       schema: FORMATION_ANALYSIS_SCHEMA as unknown as Record<string, unknown>,
-      maxTokens: 16000,
+      maxTokens: 8000,
       mock: mockFormation(String(format)),
     });
 
@@ -492,7 +505,8 @@ You recommend formations and game models for youth teams. Positions are placed o
     res.json({ analysis, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Generation failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
@@ -528,6 +542,7 @@ You are answering a structured coaching question. Respond in clean markdown with
       },
     ],
     maxTokens: 6000,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_GUIDANCE,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
@@ -566,7 +581,7 @@ You are the coach's professional assistant coach preparing a match briefing — 
 - Our lineup/availability thoughts: ${ourLineupThoughts || "full squad expected"}
 - Conditions (field, weather, roster size): ${conditions || "normal"}`,
       schema: GAME_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      maxTokens: 16000,
+      maxTokens: 8000,
       mock: { ...MOCK_GAME_PLAN, matchTitle: `vs ${opponent} — ${competition || "league game"} (demo sample)` },
     });
     const gamify = award(userId, "matchday");
@@ -579,7 +594,8 @@ You are the coach's professional assistant coach preparing a match briefing — 
     res.json({ gamePlan, award: gamify, entryId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "Generation failed" });
+    refundStructured(userId);
+    res.status(500).json({ error: "Generation failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
@@ -612,6 +628,7 @@ LIVE MATCH MODE. The coach is ON THE SIDELINE mid-game and reading on a phone. R
 - End with one short composure cue for the coach — kids mirror the sideline.`,
     messages: messages as Anthropic.Beta.BetaMessageParam[],
     maxTokens: 1500,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_LIVE_REPLY,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
@@ -659,6 +676,7 @@ POST-GAME DEBRIEF MODE. You are the analyst on the coach's staff producing the a
       },
     ],
     maxTokens: 6000,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_DEBRIEF,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
@@ -710,7 +728,7 @@ api.post("/film-analysis", async (req, res) => {
     res.status(429).json({ error: quotaError(userId) });
     return;
   }
-  bumpMonthly("filmclip", userId);
+
   const gamify = award(userId, "film");
 
   const content: Anthropic.Beta.BetaContentBlockParam[] = [];
@@ -737,9 +755,11 @@ FILM ROOM MODE. You are the video analyst on the coach's staff. The coach upload
 ## Train It  (1-2 activities that recreate and fix this exact moment)`,
     messages: [{ role: "user", content }],
     maxTokens: 6000,
+    onEngineError: () => refundMessage(userId),
     mockText: MOCK_FILM,
     doneExtra: { award: gamify, remaining: quota.remaining },
     onDone: (fullText) => {
+      bumpMonthly("filmclip", userId); // the monthly clip only counts on success
       addSeasonEntry(userId, {
         kind: "film",
         title: "Film Room breakdown",
@@ -848,7 +868,7 @@ api.get("/season", (req, res) => {
 
 // The repository read: reopen any saved artifact exactly as it was generated.
 api.get("/season/:id", (req, res) => {
-  const entry = getSeason(uid(req), 500).find((e) => e.id === Number(req.params.id));
+  const entry = getSeasonEntryById(uid(req), Number(req.params.id));
   if (!entry) {
     res.status(404).json({ error: "Entry not found" });
     return;
@@ -934,7 +954,6 @@ api.post("/board/move", async (req, res) => {
       : "Standard Tactical reads are a Pro feature — free coaches get Quick reads."));
     return;
   }
-  kvSet(key, String(used + 1));
   try {
     const boardTxt = (board as { label: string; role: string; x: number; y: number }[])
       .map((p) => `${p.label} (${p.role}) at [${Math.round(p.x)},${Math.round(p.y)}]`)
@@ -978,6 +997,7 @@ ${question
         summary: `Coach asked: "${snip(String(question), 110)}" — engine: ${snip(verdict.headline, 140)}`,
       });
     }
+    kvSet(key, String(used + 1)); // the read only counts once the engine answered
     const gamify = award(userId, "board");
     res.json({ verdict, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
   } catch (err) {
@@ -1042,8 +1062,6 @@ api.post("/staff-debate", async (req, res) => {
     res.status(429).json({ error: quotaError(userId) });
     return;
   }
-  incrementUsage(userId); incrementUsage(userId); incrementUsage(userId);
-
   const [advA, advB] = routeDebatePair(question);
   const ctx = teamContext(userId);
   try {
@@ -1087,6 +1105,7 @@ Give your verdict.`,
       mock: "[Demo verdict]\n\nFor your team, I'd lean toward the first read — but steal the set-piece idea from the second. With a live engine this verdict is grounded in your actual roster, results, and training history. Next session: 20 minutes on the picture we just argued about.",
     });
 
+    incrementUsage(userId); incrementUsage(userId); incrementUsage(userId); // three voices, counted only on success
     const gamify = award(userId, "staff");
     const entryId = addSeasonEntry(userId, {
       kind: "chat",

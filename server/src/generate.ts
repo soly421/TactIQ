@@ -94,6 +94,7 @@ interface StreamArgs {
   mockText: string;
   doneExtra?: Record<string, unknown>;
   onDone?: (fullText: string) => void;
+  onEngineError?: () => void; // engine failed after quota was consumed
 }
 
 // Server-sent-events streaming of a chat completion. Emits {type:"delta"|"done"|"error"}.
@@ -138,8 +139,9 @@ export async function streamToSSE(res: Response, args: StreamArgs): Promise<void
       send({ type: "error", message: err.message });
     } else {
       console.error("stream error", err);
-      send({ type: "error", message: "The coaching engine hit a problem. Please try again." });
+      send({ type: "error", message: "The coaching engine hit a problem. Please try again — it won't count against your limit." });
     }
+    args.onEngineError?.(); // routes refund whatever quota they consumed
   }
   res.end();
 }
@@ -201,7 +203,7 @@ export async function generateStructured<T>(args: StructuredArgs<T>): Promise<T>
     system: args.system,
     user: args.user,
     schema: args.schema,
-    maxTokens: args.maxTokens ?? 24000,
+    maxTokens: args.maxTokens ?? 12000, // a full session plan fits well inside this
   });
   return JSON.parse(result.text) as T;
 }

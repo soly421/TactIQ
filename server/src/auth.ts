@@ -51,9 +51,29 @@ function resolveClub(clubCode?: string, clubName?: string): { id: number; create
   return null;
 }
 
+// Credential endpoints get a small in-memory throttle: 20 attempts per IP
+// per 15 minutes. Not a fortress — a speed bump that stops naive scripts.
+const attempts = new Map<string, { n: number; resetAt: number }>();
+function throttled(req: { ip?: string; headers: Record<string, unknown> }): boolean {
+  const ip = String(req.headers["x-forwarded-for"] ?? req.ip ?? "?").split(",")[0].trim();
+  const now = Date.now();
+  const a = attempts.get(ip);
+  if (!a || now > a.resetAt) {
+    attempts.set(ip, { n: 1, resetAt: now + 15 * 60_000 });
+    if (attempts.size > 5000) attempts.clear(); // bounded
+    return false;
+  }
+  a.n += 1;
+  return a.n > 20;
+}
+
 export const authRouter = Router();
 
 authRouter.post("/register", async (req, res) => {
+  if (throttled(req as unknown as { ip?: string; headers: Record<string, unknown> })) {
+    res.status(429).json({ error: "Too many attempts — wait a few minutes and try again." });
+    return;
+  }
   const { email, password, name, clubCode, clubName } = req.body ?? {};
   if (!email || !password || !name) {
     res.status(400).json({ error: "email, password, and name are required" });
@@ -86,6 +106,10 @@ authRouter.post("/register", async (req, res) => {
 });
 
 authRouter.post("/login", async (req, res) => {
+  if (throttled(req as unknown as { ip?: string; headers: Record<string, unknown> })) {
+    res.status(429).json({ error: "Too many attempts — wait a few minutes and try again." });
+    return;
+  }
   const { email, password } = req.body ?? {};
   const user = db.prepare("SELECT * FROM users WHERE email = ?").get(String(email ?? "").toLowerCase().trim()) as UserRow | undefined;
   if (!user || !(await bcrypt.compare(String(password ?? ""), user.password_hash))) {

@@ -171,6 +171,15 @@ export function topAdvisorNames(userId: number, n = 2): string[] {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name]) => name);
 }
 
+// Repository detail read: ownership is the USER, not the active team — a
+// coach can reopen an artifact from any of their teams.
+export function getSeasonEntryById(userId: number, id: number): SeasonEntry | null {
+  const r = db
+    .prepare("SELECT id, date, kind, title, summary, payload FROM season_entries WHERE user_id = ? AND id = ?")
+    .get(userId, id) as { id: number; date: string; kind: SeasonEntry["kind"]; title: string; summary: string; payload: string | null } | undefined;
+  return r ? { ...r, payload: r.payload ? JSON.parse(r.payload) : undefined } : null;
+}
+
 // ---- progress ----
 export function getProgress(userId: number): Progress {
   let row = db.prepare("SELECT * FROM progress WHERE user_id = ?").get(userId) as
@@ -220,6 +229,14 @@ export function getUsage(userId: number): number {
     | { messages: number }
     | undefined;
   return row?.messages ?? 0;
+}
+
+// A failed generation refunds the message it consumed — the coach's daily
+// allowance only pays for answers that actually arrived.
+export function refundMessage(userId: number): void {
+  db.prepare(
+    "UPDATE usage_daily SET messages = MAX(0, messages - 1) WHERE user_id = ? AND day = ?",
+  ).run(userId, userToday(userId));
 }
 
 export function incrementUsage(userId: number): void {
@@ -435,6 +452,12 @@ export function replaceScheduleEvents(userId: number, source: string, events: Om
   });
   tx();
   return events.length;
+}
+
+export function countScheduleEvents(userId: number): number {
+  const teamId = activeTeamId(userId);
+  const r = db.prepare("SELECT COUNT(*) AS n FROM schedule_events WHERE user_id = ? AND (team_id IS NULL OR team_id = ?)").get(userId, teamId ?? -1) as { n: number };
+  return r.n;
 }
 
 export function addScheduleEvent(userId: number, e: Omit<ScheduleEvent, "id" | "source">): void {

@@ -96,7 +96,7 @@ function TopBar() {
           title={
             settings.billingConfigured
               ? settings.plan === "free"
-                ? "Upgrade to Pro — Deep Tactical engine on every output"
+                ? "Upgrade to Pro — the flagship Deep Tactical engine on every session, game plan, and formation"
                 : "Manage your subscription"
               : `${engineTitle} Click to switch plan (dev mode).`
           }

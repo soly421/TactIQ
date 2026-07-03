@@ -40,7 +40,7 @@ function ClubReport({ isAdmin, coachCount }: { isAdmin: boolean; coachCount: num
       </div>
       <p className="muted small">
         {report.license.planTier === "pro"
-          ? `👑 Club license active: ${report.license.seats} Pro seats — every coach gets the Deep Tactical engine.`
+          ? `👑 Club license active: ${report.license.seats} Pro seats — every coach builds with the Deep Tactical engine.`
           : "No club license yet — coaches are on individual plans."}
       </p>
       <table className="stats-table">
