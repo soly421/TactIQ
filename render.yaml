@@ -10,7 +10,7 @@
 #     FOUNDING100 — applies a permanent $14.99/mo price to the monthly Pro
 #       subscription (founding coaches keep it for life), max 100 redemptions.
 #       Simplest setup: a second recurring price at $14.99 + promo code that
-#       swaps to it, or a 25% forever coupon on the $19.99 price.
+#       swaps to it, or a 50% forever coupon on the $29.99 price.
 #     FOUNDING50 — club-seat subscriptions: 50% off for 12 months, max 10
 #       redemptions (the Founding Club offer).
 #     Webhook endpoint in the Stripe dashboard: <PUBLIC_URL>/api/billing/webhook
@@ -44,9 +44,9 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PRICE_ID_PRO
-        sync: false # $19.99/mo monthly price
+        sync: false # $29.99/mo monthly price
       - key: STRIPE_PRICE_ID_PRO_ANNUAL
-        sync: false # $199/yr annual price (2 months free vs monthly)
+        sync: false # $299/yr annual price (2 months free vs monthly)
       - key: STRIPE_PRICE_ID_CLUB_SEAT
         sync: false # $10/seat/mo, quantity = seats (server enforces 10-seat minimum)
       - key: RESEND_API_KEY
