@@ -10,7 +10,7 @@ const MATRIX: { feature: string; free: string; pro: string; club: string }[] = [
   { feature: "AI engine", free: "Light / Standard Tactical", pro: "🧠 Deep Tactical (flagship)", club: "🧠 Deep Tactical" },
   { feature: "Messages per day", free: "30", pro: "300", club: "300 / coach" },
   { feature: "Coaching advisors", free: "Your staff of 3", pro: "All 15 + build your own", club: "All 15 + custom" },
-  { feature: "Session Library (907)", free: "5 unlocks / month", pro: "Unlimited", club: "Unlimited" },
+  { feature: "Session Library", free: "5 unlocks / month", pro: "Unlimited", club: "Unlimited" },
   { feature: "Session Studio + animated diagrams", free: "✓", pro: "✓", club: "✓" },
   { feature: "Match Day: pre-game + debrief", free: "✓", pro: "✓", club: "✓" },
   { feature: "Live Bench (in-game adjustments)", free: "—", pro: "✓", club: "✓" },
@@ -107,7 +107,7 @@ export function Pricing({ go }: { go: (tab: string) => void }) {
             <tbody>
               {MATRIX.map((r) => (
                 <tr key={r.feature}>
-                  <td>{r.feature}</td>
+                  <td>{r.feature === "Session Library" && ent?.libraryCount ? `Session Library (${ent.libraryCount.toLocaleString()})` : r.feature}</td>
                   <td className="muted">{r.free}</td>
                   <td style={{ fontWeight: 600 }}>{r.pro}</td>
                   <td>{r.club}</td>

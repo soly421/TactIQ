@@ -12,6 +12,7 @@ export interface Entitlements {
   liveBench: boolean;
   seasonPlanner: boolean;
   maxTeams: number;
+  libraryCount: number;
   billingConfigured: boolean;
 }
 

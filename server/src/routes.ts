@@ -301,7 +301,7 @@ You design world-class youth training sessions. Every drill must include a rende
 - Team level: ${level || "recreational travel"}
 - Extra notes: ${notes || "none"}`,
       schema: SESSION_PLAN_SCHEMA as unknown as Record<string, unknown>,
-      mock: MOCK_SESSION_PLAN,
+      mock: { ...MOCK_SESSION_PLAN, title: `${MOCK_SESSION_PLAN.title} (demo sample)` },
     });
 
     const gamify = award(userId, "session");
@@ -378,7 +378,7 @@ You design season-long periodized curricula for youth teams: coherent blocks tha
 - Season focus (coach's words): ${focus || "overall development with the team's preferred style"}`,
       schema: SEASON_PLAN_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 20000,
-      mock: MOCK_SEASON_PLAN,
+      mock: { ...MOCK_SEASON_PLAN, title: `${MOCK_SEASON_PLAN.title} (demo sample)` },
     });
     const gamify = award(userId, "session");
     const entryId = addSeasonEntry(userId, { kind: "session", title: `Season plan: ${plan_.title}`, summary: `${plan_.weeks.length} weeks`, payload: plan_ });
@@ -406,13 +406,16 @@ api.post("/library/:id/generate", async (req, res) => {
     return;
   }
   const cached = getLibraryPlan(userId, template.id);
-  if (cached) {
+  // A plan cached in demo mode (labeled "(demo sample)") must not be replayed
+  // once a real engine is configured — regenerate it live instead.
+  const cachedIsDemo = Boolean(cached && String((cached as { title?: string }).title ?? "").includes("(demo sample)"));
+  if (cached && !(hasAnyProvider() && cachedIsDemo)) {
     res.json({ plan: cached, cached: true });
     return;
   }
   const ent = entitlementsFor(planOf(userId));
   if (monthlyCount("libunlock", userId) >= ent.libraryUnlocksPerMonth) {
-    res.status(403).json(upgradeError(`You've used all ${ent.libraryUnlocksPerMonth} free Library unlocks this month. Pro unlocks the whole catalog — all 907 sessions.`));
+    res.status(403).json(upgradeError(`You've used all ${ent.libraryUnlocksPerMonth} free Library unlocks this month. Pro unlocks the whole catalog — all ${SESSION_TEMPLATES.length} sessions.`));
     return;
   }
   if (!consumeStructured(userId)) {
@@ -572,7 +575,7 @@ You are the coach's professional assistant coach preparing a match briefing — 
 - Conditions (field, weather, roster size): ${conditions || "normal"}`,
       schema: GAME_PLAN_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 16000,
-      mock: MOCK_GAME_PLAN,
+      mock: { ...MOCK_GAME_PLAN, matchTitle: `vs ${opponent} — ${competition || "league game"} (demo sample)` },
     });
     const gamify = award(userId, "matchday");
     const entryId = addSeasonEntry(userId, {
@@ -1017,6 +1020,7 @@ api.get("/entitlements", (req, res) => {
     liveBench: ent.liveBench,
     seasonPlanner: ent.seasonPlanner,
     maxTeams: ent.maxTeams,
+    libraryCount: SESSION_TEMPLATES.length,
     billingConfigured: stripeConfigured,
   });
 });
@@ -1126,7 +1130,7 @@ async function dailyBriefing(
   },
 ): Promise<string> {
   const day = new Date().toISOString().slice(0, 10);
-  const key = `brief:${userId}:${activeTeamId(userId) ?? 0}:${day}`;
+  const key = `brief:${userId}:${activeTeamId(userId) ?? 0}:${day}:${hasAnyProvider() ? "live" : "demo"}`;
   const cached = kvGet(key);
   if (cached) return cached;
   let text: string;
