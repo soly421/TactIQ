@@ -179,8 +179,22 @@ authRouter.post("/reset", async (req, res) => {
 
 // Full account + data deletion (privacy requirement)
 authRouter.delete("/account", requireAuth, (req, res) => {
-  db.prepare("DELETE FROM users WHERE id = ?").run((req as AuthedRequest).userId);
-  res.json({ ok: true });
+  const userId = (req as AuthedRequest).userId;
+  try {
+    // Most children cascade off users(id). club_sessions.uploaded_by only
+    // gained ON DELETE CASCADE recently — SQLite can't ALTER an FK, so an
+    // already-deployed DB still has the old RESTRICT. Clear the uploads
+    // explicitly inside a transaction so the delete succeeds on any schema
+    // (their club comments cascade off session_id).
+    db.transaction(() => {
+      db.prepare("DELETE FROM club_sessions WHERE uploaded_by = ?").run(userId);
+      db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    })();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("account deletion failed", err);
+    res.status(500).json({ error: "We couldn't delete the account — please try again or contact support." });
+  }
 });
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
