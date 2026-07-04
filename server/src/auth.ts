@@ -5,11 +5,8 @@ import crypto from "node:crypto";
 import { db } from "./db.js";
 import { consumePasswordReset, createPasswordReset, findUserByEmail } from "./store.js";
 import { emailConfigured, sendPasswordReset } from "./email.js";
+import { JWT_SECRET } from "./secret.js";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "tactiq-dev-secret-change-in-production";
-if (!process.env.JWT_SECRET) {
-  console.warn("⚠️  JWT_SECRET not set — using a development secret. Set JWT_SECRET in production.");
-}
 const TOKEN_TTL = "30d";
 
 export interface AuthedRequest extends Request {
@@ -44,7 +41,13 @@ function resolveClub(clubCode?: string, clubName?: string): { id: number; create
     return { id: row.id, created: false };
   }
   if (clubName) {
-    const code = clubName.replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase() + Math.floor(100 + Math.random() * 900);
+    // Unguessable code: a short readable prefix + 6 crypto-random base32 chars.
+    // The old name+3-digits scheme was only ~900 guesses per known club name,
+    // letting anyone enumerate a code and join to read the club's private
+    // sessions, curriculum, roster (and potentially claim a paid seat).
+    const prefix = clubName.replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase();
+    const rand = crypto.randomBytes(5).toString("base64").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 6).padEnd(6, "0");
+    const code = `${prefix}-${rand}`;
     const info = db.prepare("INSERT INTO clubs (name, code) VALUES (?, ?)").run(clubName.trim().slice(0, 60), code);
     return { id: Number(info.lastInsertRowid), created: true };
   }
@@ -130,6 +133,12 @@ authRouter.get("/me", requireAuth, (req, res) => {
 
 // Join or create a club after registration
 authRouter.post("/club", requireAuth, (req, res) => {
+  // Throttle like the credential routes — joining by code exposes the club's
+  // private sessions/curriculum/roster, so a code can't be brute-forced.
+  if (throttled(req as unknown as { ip?: string; headers: Record<string, unknown> })) {
+    res.status(429).json({ error: "Too many attempts — wait a few minutes and try again." });
+    return;
+  }
   const { clubCode, clubName } = req.body ?? {};
   try {
     const club = resolveClub(clubCode, clubName);

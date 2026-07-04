@@ -195,6 +195,31 @@ check("teams list", s == 200 and len(r["teams"]) == 2)
 s, r = call("GET", "/club/overview", None, PRO)
 check("club overview (no club) handled", s in (200, 400, 403, 404), f"status {s} {str(r)[:100]}")
 
+# ---------- account lifecycle (regression: delete must succeed even for a
+# club admin who uploaded a session, and must invalidate the token) ----------
+import time as _t
+_email = f"lifecycle-{int(_t.time()*1000)%1000000}@a.com"
+s, r = call("POST", "/auth/register", {"name": "Lifecycle", "email": _email, "password": "password123"})
+LIFE = r.get("token", "")
+check("lifecycle: register", s == 200 and LIFE != "", f"status {s}")
+s, r = call("POST", "/auth/club", {"clubName": "Lifecycle SC"}, LIFE)
+check("lifecycle: create club (admin)", s == 200, str(r)[:100])
+s, r = call("POST", "/club/sessions", {"title": "Rondo", "description": "warmup", "content": "3v1 rondo"}, LIFE)
+check("lifecycle: upload club session", s == 200, str(r)[:100])
+s, r = call("DELETE", "/auth/account", None, LIFE)
+check("lifecycle: delete account (club uploader) -> 200", s == 200, f"status {s} {str(r)[:100]}")
+s, r = call("GET", "/team", token=LIFE)
+check("lifecycle: token invalid after delete -> 401", s == 401, f"status {s}")
+
+# ---------- club code is unguessable (not name+3 digits) ----------
+s, r = call("POST", "/auth/register", {"name": "CodeChk", "email": f"code-{int(_t.time()*1000)%1000000}@a.com", "password": "password123"})
+CODE = r.get("token", "")
+s, r = call("POST", "/auth/club", {"clubName": "Alpha FC"}, CODE)
+_code = (r.get("user") or {}).get("clubCode") or str(r)
+s, r2 = call("GET", "/club/overview", None, CODE)
+_actual = (r2.get("club") or {}).get("code", "") if isinstance(r2, dict) else ""
+check("club code is unguessable (has a random suffix)", bool(__import__("re").search(r"-[A-Z0-9]{6}$", _actual)), f"code={_actual!r}")
+
 fails = [x for x in results if not x[0]]
 print(f"\n{'='*50}\n{len(results)-len(fails)}/{len(results)} passed, {len(fails)} failed")
 for _, n, d in fails: print("  FAIL:", n, "->", d[:150])

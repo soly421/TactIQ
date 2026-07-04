@@ -313,6 +313,7 @@ export function Team() {
           <h2>Roster ({players.filter((p) => p.name).length})</h2>
           <span className="muted small">First names or initials only — protect the kids' privacy.</span>
         </div>
+        <div className="table-scroll">
         <table className="roster-table">
           <thead>
             <tr><th style={{ width: "22%" }}>Player</th><th style={{ width: "8%" }}>#</th><th style={{ width: "18%" }}>Positions</th><th style={{ width: "12%" }}>Foot</th><th>Notes (strengths, needs, temperament)</th><th /></tr>
@@ -334,6 +335,7 @@ export function Team() {
             ))}
           </tbody>
         </table>
+        </div>
         <button className="btn ghost" style={{ marginTop: 10 }} onClick={() => set("players", [...players, { ...EMPTY_PLAYER }])}>
           + Add player
         </button>

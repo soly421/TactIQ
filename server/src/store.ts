@@ -589,6 +589,24 @@ export function kvSet(k: string, v: string): void {
   db.prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(k, v);
 }
 
+// Atomically bump a numeric kv counter by 1 and return the NEW value. Used to
+// reserve a daily-quota slot BEFORE an awaited model call so parallel requests
+// can't all read the same pre-value and slip past the cap (better-sqlite3 is
+// synchronous, so the read-and-write here can't interleave). Pair with
+// kvDecrement in the failure path to refund a reserved-but-unused slot.
+export function kvIncrement(k: string): number {
+  const row = db.prepare(
+    "INSERT INTO kv (k, v) VALUES (?, '1') ON CONFLICT(k) DO UPDATE SET v = CAST(CAST(v AS INTEGER) + 1 AS TEXT) RETURNING v",
+  ).get(k) as { v: string };
+  return Number(row.v);
+}
+
+export function kvDecrement(k: string): void {
+  db.prepare(
+    "UPDATE kv SET v = CAST(MAX(0, CAST(v AS INTEGER) - 1) AS TEXT) WHERE k = ?",
+  ).run(k);
+}
+
 // ---- password resets ----
 export function createPasswordReset(userId: number, token: string, ttlMinutes = 60): void {
   db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(userId);

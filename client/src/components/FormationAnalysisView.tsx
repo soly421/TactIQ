@@ -8,7 +8,7 @@ export function FormationAnalysisView({ analysis, entryId }: { analysis: Formati
   return (
     <div className="fade-in">
       <div className="hero" style={{ paddingBottom: 20 }}>
-        {/\(demo/i.test(analysis.recommendedFormation) && (
+        {/demo sample/i.test(analysis.recommendedFormation + " " + analysis.formationRationale) && (
           <div className="demo-banner" style={{ marginBottom: 10 }}>🧪 <b>Demo sample</b> — a live engine key tailors this analysis to your actual squad.</div>
         )}
         <h1 style={{ fontSize: 26 }}>{analysis.recommendedFormation}</h1>

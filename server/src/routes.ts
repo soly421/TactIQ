@@ -13,7 +13,7 @@ import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry
   adminOverview, estCostToday, getUserBilling, markClubInterest,
   addCustomAdvisor, addSeasonEntry, deleteCustomAdvisor, getCustomAdvisors, getLibraryPlan,
   getPlanTier, getProgress, getSeason, getSquad, getUnlockedTemplateIds, getUsage, getXpHistory,
-  activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
+  activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, kvIncrement, kvDecrement, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
 import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
@@ -86,19 +86,22 @@ const STRUCTURED_PER_DAY: Record<Plan, number> = { free: 3, pro: 150 };
 
 function consumeStructured(userId: number): boolean {
   if (overComputeCeiling(userId)) return false;
-  const day = userToday(userId);
-  const key = `structcap:${userId}:${day}`;
-  const used = Number(kvGet(key) ?? 0);
-  if (used >= STRUCTURED_PER_DAY[planOf(userId)]) return false;
-  kvSet(key, String(used + 1));
+  const key = `structcap:${userId}:${userToday(userId)}`;
+  // Reserve atomically before the model call: parallel requests each get a
+  // distinct incremented value, so a burst can't share one pre-value and slip
+  // past the cap. Over-cap reservations are refunded immediately.
+  const reserved = kvIncrement(key);
+  if (reserved > STRUCTURED_PER_DAY[planOf(userId)]) {
+    kvDecrement(key);
+    return false;
+  }
   return true;
 }
 
 // A failed generation must not cost the coach a slot: every cap that was
 // consumed optimistically gets refunded in the endpoint's catch block.
 function refundStructured(userId: number): void {
-  const key = `structcap:${userId}:${userToday(userId)}`;
-  kvSet(key, String(Math.max(0, Number(kvGet(key) ?? 0) - 1)));
+  kvDecrement(`structcap:${userId}:${userToday(userId)}`);
 }
 
 function structuredLimitMsg(userId: number): string {
@@ -1012,19 +1015,8 @@ api.post("/board/scenario", async (req, res) => {
   const userId = uid(req);
   const day = userToday(userId);
   const key = `boardcap:${userId}:${day}`;
-  const used = Number(kvGet(key) ?? 0);
-  if (used >= BOARD_READS_PER_DAY[planOf(userId)]) {
-    res.status(planOf(userId) === "free" ? 403 : 429).json(
-      planOf(userId) === "free"
-        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free board paints today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
-        : { error: "Daily engine limit reached — resets tomorrow." },
-    );
-    return;
-  }
-  if (overComputeCeiling(userId)) {
-    res.status(429).json({ error: CEILING_MSG });
-    return;
-  }
+  const cap = BOARD_READS_PER_DAY[planOf(userId)];
+  // Validate the request BEFORE reserving a slot so bad input never burns quota.
   const { format, formation, scenario, board, opponents, opponent, facts, depth } = req.body ?? {};
   const scenarioTxt = String(scenario ?? "").trim().slice(0, 500);
   const fmt = String(format ?? "").slice(0, 20);
@@ -1040,6 +1032,23 @@ api.post("/board/scenario", async (req, res) => {
     res.status(403).json(upgradeError(depthTier === "deep"
       ? "Deep Tactical paints (the flagship engine) are a Pro feature."
       : "Standard Tactical paints are a Pro feature — free coaches get Quick paints."));
+    return;
+  }
+  if (overComputeCeiling(userId)) {
+    res.status(429).json({ error: CEILING_MSG });
+    return;
+  }
+  // Reserve the slot ATOMICALLY before the awaited model call — parallel
+  // requests each get a distinct incremented value, so a burst can't all read
+  // the same pre-value and slip past the cap. Refund below on any failure.
+  const reserved = kvIncrement(key);
+  if (reserved > cap) {
+    kvDecrement(key);
+    res.status(planOf(userId) === "free" ? 403 : 429).json(
+      planOf(userId) === "free"
+        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free board paints today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
+        : { error: "Daily engine limit reached — resets tomorrow." },
+    );
     return;
   }
   try {
@@ -1104,6 +1113,7 @@ THE COACH'S SITUATION — paint the answer to exactly this:
     // A paint that lost more than 20% of the squad is a failed paint — the
     // coach never sees a half-drawn board.
     if (picture.positions.length < Math.ceil(sentLabels.length * 0.8)) {
+      kvDecrement(key); // refund the reserved slot — an incomplete paint doesn't count
       res.status(502).json({ error: "The engine returned an incomplete picture — try again, it won't count against your daily limit." });
       return;
     }
@@ -1112,11 +1122,11 @@ THE COACH'S SITUATION — paint the answer to exactly this:
       title: `Board: ${snip(scenarioTxt, 70)}`,
       summary: `${form} (${fmt}) — ${snip(picture.headline, 130)}`,
     });
-    kvSet(key, String(used + 1)); // the paint only counts once the engine delivered
     const gamify = award(userId, "board");
-    res.json({ picture, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
+    res.json({ picture, award: gamify, readsLeft: Math.max(0, cap - reserved) });
   } catch (err) {
     console.error(err);
+    kvDecrement(key); // refund the reserved slot — a failed paint doesn't count
     res.status(500).json({ error: "The paint failed — nothing was counted against your daily limit. Try again." });
   }
 });
@@ -1153,9 +1163,17 @@ api.post("/staff-debate", async (req, res) => {
     res.status(400).json({ error: "Ask the staff a question" });
     return;
   }
-  // a debate is three voices — it costs three messages
+  // a debate is three voices — it costs three messages. Reserve all three
+  // ATOMICALLY before the awaited model calls so parallel debates can't share
+  // one pre-count and slip past the daily cap; refund all three on any failure.
   const limit = dailyLimit(userId);
-  if (getUsage(userId) + 3 > limit || overComputeCeiling(userId)) {
+  if (overComputeCeiling(userId)) {
+    res.status(429).json({ error: quotaError(userId) });
+    return;
+  }
+  incrementUsage(userId); incrementUsage(userId); incrementUsage(userId);
+  if (getUsage(userId) > limit) {
+    refundMessage(userId); refundMessage(userId); refundMessage(userId);
     res.status(429).json({ error: quotaError(userId) });
     return;
   }
@@ -1202,7 +1220,6 @@ Give your verdict.`,
       mock: "[Demo verdict]\n\nFor your team, I'd lean toward the first read — but steal the set-piece idea from the second. With a live engine this verdict is grounded in your actual roster, results, and training history. Next session: 20 minutes on the picture we just argued about.",
     });
 
-    incrementUsage(userId); incrementUsage(userId); incrementUsage(userId); // three voices, counted only on success
     const gamify = award(userId, "staff");
     const entryId = addSeasonEntry(userId, {
       kind: "chat",
@@ -1225,6 +1242,7 @@ Give your verdict.`,
     });
   } catch (err) {
     console.error(err);
+    refundMessage(userId); refundMessage(userId); refundMessage(userId); // three voices refunded on failure
     res.status(500).json({ error: "The staff room hit a snag — try again." });
   }
 });

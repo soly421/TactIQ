@@ -92,6 +92,12 @@ body::before {
   display: flex; gap: 4px; background: var(--bg-elev);
   border: 1px solid var(--border); border-radius: 999px; padding: 4px;
   margin: 8px 0 20px; overflow-x: auto; width: fit-content; max-width: 100%;
+  scrollbar-width: none; /* the fade below signals scrollability instead */
+}
+.tabs::-webkit-scrollbar { display: none; }
+/* right-edge fade tells a phone user there are more tabs to scroll to */
+@media (max-width: 620px) {
+  .tabs { -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent); }
 }
 .tab {
   border: none; background: transparent; color: var(--muted);
@@ -337,6 +343,10 @@ ul.points li { margin: 4px 0; font-size: 13.5px; line-height: 1.5; }
 .gen-overlay { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 0; color: var(--muted); }
 
 /* roster table */
+/* horizontal scroll wrapper so wide tables (roster) keep every column —
+   including the ✕ delete control — reachable on a phone instead of clipping */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll .roster-table { min-width: 460px; }
 .roster-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .roster-table th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; padding: 6px 8px; }
 .roster-table td { padding: 4px; }

@@ -54,7 +54,7 @@ export function MatchDay() {
           <span className="muted small">Opponent pre-filled below · set in My Team</span>
         </div>
       )}
-      <div className="tabs" style={{ marginBottom: 18, maxWidth: 480 }}>
+      <div className="tabs" style={{ marginBottom: 18 }}>
         {SEGMENTS.map((s) => (
           <button key={s.id} className={`tab ${seg === s.id ? "active" : ""}`} onClick={() => setSeg(s.id)}>
             {s.label}

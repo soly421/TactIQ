@@ -5,6 +5,7 @@ import { countScheduleEvents, activeTeamId,
   replaceScheduleEvents, saveSquad, setTeamSnapToken, upcomingEvents, type ScheduleEvent,
 } from "./store.js";
 import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "./secret.js";
 
 // ============================================================================
 // Schedule pipeline. Priority order of sources:
@@ -14,8 +15,6 @@ import jwt from "jsonwebtoken";
 //      behind TEAMSNAP_CLIENT_ID/SECRET.
 //   3. Manual entry — always available.
 // ============================================================================
-
-const JWT_SECRET = process.env.JWT_SECRET ?? "tactiq-dev-secret-change-in-production";
 
 // ---------------- ICS parsing ----------------
 
