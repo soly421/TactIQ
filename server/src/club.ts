@@ -16,7 +16,9 @@ function uid(req: unknown): number {
 clubRouter.get("/overview", (req, res) => {
   const club = getUserClub(uid(req));
   if (!club) {
-    res.status(404).json({ error: "You're not in a club yet. Join with a club code or create one in My Team." });
+    // 200, not 404: every clubless user's Club tab probes this — an error
+    // status is console noise for a completely normal state
+    res.json({ club: null });
     return;
   }
   const coaches = clubCoaches(club.id).map((c) => ({

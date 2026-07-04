@@ -197,8 +197,12 @@ export function Club({ user }: { user: User }) {
 
   const load = useCallback(async () => {
     try {
-      const o = await getJSON<ClubOverview>("/api/club/overview");
-      setOverview(o);
+      const o = await getJSON<ClubOverview | { club: null }>("/api/club/overview");
+      if (!o.club) {
+        setOverview(null);
+        return;
+      }
+      setOverview(o as ClubOverview);
       setPhilosophy(o.club.philosophy);
       const s = await getJSON<{ sessions: ClubSession[] }>("/api/club/sessions");
       setSessions(s.sessions);

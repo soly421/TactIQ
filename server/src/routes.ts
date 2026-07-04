@@ -981,15 +981,16 @@ const clampGrid = (v: unknown, lo = 3, hi = 97) => Math.min(hi, Math.max(lo, Mat
 
 // Hard geometric sanitation of the model's paint — labels, bounds, caps.
 // The client re-validates and collision-resolves; this is the server floor.
-function sanitizePicture(raw: PaintedPicture, sentLabels: string[]): PaintedPicture {
+function sanitizePicture(raw: PaintedPicture, sentLabels: string[], oppLabels: string[] = []): PaintedPicture {
   const labelSet = new Set(sentLabels);
   const seen = new Set<string>();
   const positions = (raw.positions ?? [])
     .filter((p) => labelSet.has(String(p.label)) && !seen.has(String(p.label)) && (seen.add(String(p.label)), true))
     .map((p) => ({ label: String(p.label).slice(0, 8), x: clampGrid(p.x), y: clampGrid(p.y) }));
+  const oppSet = new Set(oppLabels);
   const oppSeen = new Set<string>();
   const opponentPositions = (raw.opponentPositions ?? [])
-    .filter((p) => !oppSeen.has(String(p.label)) && (oppSeen.add(String(p.label)), true))
+    .filter((p) => oppSet.has(String(p.label)) && !oppSeen.has(String(p.label)) && (oppSeen.add(String(p.label)), true))
     .slice(0, 15)
     .map((p) => ({ label: String(p.label).slice(0, 8), x: clampGrid(p.x), y: clampGrid(p.y) }));
   return {
@@ -1026,7 +1027,11 @@ api.post("/board/scenario", async (req, res) => {
   }
   const { format, formation, scenario, board, opponents, opponent, facts, depth } = req.body ?? {};
   const scenarioTxt = String(scenario ?? "").trim().slice(0, 500);
-  if (!formation || !Array.isArray(board) || board.length < 5 || scenarioTxt.length < 3) {
+  const fmt = String(format ?? "").slice(0, 20);
+  const form = String(formation ?? "").slice(0, 40);
+  const rowOk = (p: unknown) => !!p && typeof p === "object"
+    && ["string", "number", "undefined"].includes(typeof (p as { label?: unknown }).label);
+  if (!formation || !Array.isArray(board) || board.length < 5 || !board.every(rowOk) || scenarioTxt.length < 3) {
     res.status(400).json({ error: "formation, the board, and a described scenario are required" });
     return;
   }
@@ -1043,8 +1048,11 @@ api.post("/board/scenario", async (req, res) => {
     const boardTxt = boardIn
       .map((p) => `${String(p.label ?? "?").slice(0, 8)} (${String(p.role ?? "?").slice(0, 4)}) at [${Math.round(Number(p.x) || 0)},${Math.round(Number(p.y) || 0)}]`)
       .join("; ");
-    const oppTxt = (Array.isArray(opponents) ? (opponents as { label: string; x: number; y: number }[]) : [])
-      .slice(0, 15)
+    const oppsIn = (Array.isArray(opponents) ? (opponents as { label: string; x: number; y: number }[]) : [])
+      .filter(rowOk)
+      .slice(0, 15);
+    const oppLabels = oppsIn.map((o) => String(o.label ?? "O?").slice(0, 8));
+    const oppTxt = oppsIn
       .map((o) => `${String(o.label ?? "O?").slice(0, 8)} at [${Math.round(Number(o.x) || 0)},${Math.round(Number(o.y) || 0)}]`)
       .join("; ");
     const factsTxt = (Array.isArray(facts) ? facts : []).slice(0, 10).map((f) => `- ${String(f).slice(0, 160)}`).join("\n");
@@ -1054,7 +1062,7 @@ api.post("/board/scenario", async (req, res) => {
       userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
-You are TactIQ's TACTICAL PAINTER — a professional first-team analyst who answers a coach's described situation by DRAWING it: exact positions, the ball's route, and touchline instructions. Coordinates: 100x100 grid, y=0 is the OPPONENT goal (up = attacking), y=100 our own goal, x=0 the left touchline; our GK belongs around y=78-95 unless the coach's situation explicitly demands otherwise.
+You are TactIQ's TACTICAL PAINTER — a professional first-team analyst who answers a coach's described situation by DRAWING it: exact positions, the ball's route, and touchline instructions. Coordinates: 100x100 grid, y=0 is the OPPONENT goal (up = attacking), y=100 our own goal, x=0 the left touchline, x=100 the right touchline; our GK belongs around y=85-95 (push toward ~78 only when sweeping behind a high line) unless the coach's situation explicitly demands otherwise.
 
 Paint by mainstream doctrine, adapted to the described situation and the age group in team memory:
 - Defending: pressure-cover-balance; blocks compact 30-35 units front-to-back, shifted toward the ball with the weak side tucked; the back line NEVER chases out of shape in a press — the front curves runs and traps on the touchline, mids lock pivots.
@@ -1067,9 +1075,10 @@ Hard rules for the paint:
 - Realistic spacing: no two players within 5 grid units; keep the picture connected (no player more than ~26 from every teammate unless the situation demands a target/outlet).
 - VERIFIED FACTS below were computed geometrically from the actual board — trust them over your own counting, and reference their numbers in your words.
 - callouts name OUR players by label (and by roster name from team memory when natural), in concrete touchline language a youth coach would actually shout. Anchor each callout where the action happens; set fromLabel to the player whose job it is.
-- ballPath tells this plan's story: where the ball starts, travels, and ends when the plan WORKS.
+- ballPath tells this plan's story: it STARTS where the ball actually is in the coach's situation (their ball if we're defending — the path then shows where we win it and where it goes), travels, and ends when the plan WORKS.
+- If you reposition their players, opponentPositions must reuse EXACTLY the opponent labels listed — never invent new ones.
 - headline: the ONE instruction to shout first. rationale: read the whole picture — their threat, our answer, the trade.`,
-      user: `Format: ${format}. Our formation: ${formation}.
+      user: `Format: ${fmt}. Our formation: ${form}.
 Our current board: ${boardTxt}
 ${oppTxt ? `Their players on the board (same grid): ${oppTxt}` : "No opposition placed — paint against a typical opponent for this age group."}
 ${opponent ? `Their game plan, as scouted by the coach: ${String(opponent).slice(0, 300)}` : ""}
@@ -1091,7 +1100,7 @@ THE COACH'S SITUATION — paint the answer to exactly this:
         ],
       },
     });
-    const picture = sanitizePicture(raw, sentLabels);
+    const picture = sanitizePicture(raw, sentLabels, oppLabels);
     // A paint that lost more than 20% of the squad is a failed paint — the
     // coach never sees a half-drawn board.
     if (picture.positions.length < Math.ceil(sentLabels.length * 0.8)) {
@@ -1101,7 +1110,7 @@ THE COACH'S SITUATION — paint the answer to exactly this:
     addSeasonEntry(userId, {
       kind: "formation",
       title: `Board: ${snip(scenarioTxt, 70)}`,
-      summary: `${formation} (${format}) — ${snip(picture.headline, 130)}`,
+      summary: `${form} (${fmt}) — ${snip(picture.headline, 130)}`,
     });
     kvSet(key, String(used + 1)); // the paint only counts once the engine delivered
     const gamify = award(userId, "board");

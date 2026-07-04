@@ -37,7 +37,12 @@ function rows(spec: [Role, number, number[]][]): Piece[] {
       const n = (counts.get(role) ?? 0) + 1;
       counts.set(role, n);
       const side = xs.length === 1 ? "" : i === 0 ? "L" : i === xs.length - 1 ? "R" : "C";
-      out.push({ id: `${role}${n}`, role, label: role === "GK" ? "GK" : `${side}${role}`.slice(0, 3), x, y });
+      // a 4-across midfield gets the conventional shirts — two "CCM"s would
+      // collapse into one map key and stack two players on every paint
+      const label = role === "GK" ? "GK"
+        : xs.length === 4 && role === "CM" ? ["LM", "LCM", "RCM", "RM"][i]
+        : `${side}${role}`.slice(0, 3);
+      out.push({ id: `${role}${n}`, role, label, x, y });
     });
   }
   return out;
@@ -525,15 +530,6 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Scenario choreography: the ball's story through each picture, plus the
-// order the lines move in. The explorer plays these as a live sequence —
-// waypoints resolve against the ACTUAL scenario positions of this formation,
-// so every one of the 20 shapes animates its own version of the movement.
-// ---------------------------------------------------------------------------
-
-export type WaveOrder = Role[][];
-
 // Where the ball IS in each scenario picture. Defensive shapes are shifted
 // toward this point (the zonal-shift doctrine) — showing it is what makes a
 // ball-side-leaning block read as coaching instead of chaos.
@@ -547,71 +543,6 @@ export const SCENARIO_BALL: Partial<Record<ScenarioId, { x: number; y: number }>
   wideAttack: { x: 86, y: 18 },
   defCross: { x: 16, y: 76 },
 };
-
-export interface Choreo {
-  // each waypoint: role to anchor to (picked by preference order) or raw point
-  ball: ({ role: Role; pick: "left" | "right" | "center" | "high" } | { x: number; y: number })[];
-  waves: WaveOrder; // which lines move first, second, third
-}
-
-export const CHOREO: Partial<Record<ScenarioId, Choreo>> = {
-  buildup: {
-    ball: [{ role: "GK", pick: "center" }, { role: "CB", pick: "left" }, { role: "DM", pick: "center" }, { role: "CM", pick: "left" }, { role: "W", pick: "left" }, { role: "ST", pick: "center" }],
-    waves: [["GK", "CB", "FB"], ["DM", "CM"], ["AM", "W", "ST"]],
-  },
-  highpress: {
-    // their keeper plays out, the pass gets forced left, the trap snaps
-    // shut on the fullback at the touchline — where our press picture ends
-    ball: [{ x: 50, y: 12 }, { x: 30, y: 16 }, { x: 14, y: 26 }],
-    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
-  },
-  midblock: {
-    // they circulate left then right; the block's end picture is the
-    // ball-side shift onto their right-flank carrier. The block moves as
-    // ONE unit — "shift together" is the entire point of the drill.
-    ball: [{ x: 50, y: 22 }, { x: 24, y: 28 }, { x: 76, y: 28 }],
-    waves: [["ST", "W", "AM", "CM", "DM", "CB", "FB", "GK"]],
-  },
-  lowblock: {
-    // ball worked to their winger on our right, cross comes in, first
-    // contact clears it to the outlet at halfway. One unit, one slide.
-    ball: [{ x: 72, y: 56 }, { x: 84, y: 68 }, { x: 55, y: 84 }, { role: "ST", pick: "center" }],
-    waves: [["ST", "W", "AM", "CM", "DM", "CB", "FB", "GK"]],
-  },
-  attTransition: {
-    ball: [{ x: 46, y: 56 }, { role: "CM", pick: "center" }, { role: "W", pick: "right" }, { role: "ST", pick: "center" }],
-    waves: [["ST", "W"], ["AM", "CM"], ["FB", "DM", "CB", "GK"]],
-  },
-  defTransition: {
-    ball: [{ x: 50, y: 42 }],
-    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
-  },
-  wideAttack: {
-    ball: [{ x: 50, y: 46 }, { role: "FB", pick: "right" }, { role: "W", pick: "right" }, { role: "AM", pick: "center" }, { x: 50, y: 6 }],
-    waves: [["CB", "FB", "GK"], ["DM", "CM"], ["AM", "W", "ST"]],
-  },
-  defCross: {
-    ball: [{ x: 12, y: 66 }, { x: 16, y: 76 }, { x: 44, y: 86 }, { x: 62, y: 60 }, { role: "ST", pick: "center" }],
-    waves: [["CB", "FB", "GK"], ["DM", "CM"], ["AM", "W", "ST"]],
-  },
-};
-
-// Resolve a choreography waypoint against the actual scenario positions.
-export function resolveBallPath(pieces: Piece[], c: Choreo): { x: number; y: number }[] {
-  const out: { x: number; y: number }[] = [];
-  for (const wp of c.ball) {
-    if ("x" in wp) { out.push({ x: wp.x, y: wp.y }); continue; }
-    const cands = pieces.filter((p) => p.role === wp.role);
-    if (!cands.length) continue; // formation lacks the role — skip the touch
-    let pickd = cands[0];
-    if (wp.pick === "left") pickd = cands.reduce((a, b) => (a.x < b.x ? a : b));
-    else if (wp.pick === "right") pickd = cands.reduce((a, b) => (a.x > b.x ? a : b));
-    else if (wp.pick === "high") pickd = cands.reduce((a, b) => (a.y < b.y ? a : b));
-    else pickd = cands.reduce((a, b) => (Math.abs(a.x - 50) < Math.abs(b.x - 50) ? a : b));
-    out.push({ x: pickd.x, y: pickd.y });
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // The matchup engine: OUR scenario picture vs THEIR placed shape, resolved
@@ -1095,118 +1026,6 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
 }
 
 // ---------------------------------------------------------------------------
-// Instant local pre-read: the "quick eval" chips that appear the moment a
-// piece is dropped, while the AI engine computes the deep line.
-// ---------------------------------------------------------------------------
-
-export interface QuickRead {
-  gains: string[];
-  risks: string[];
-}
-
-const ROLE_WORDS: Record<Role, string> = {
-  GK: "keeper", CB: "center back", FB: "fullback", DM: "pivot", CM: "midfielder", AM: "attacking mid", W: "winger", ST: "striker", OPP: "opponent",
-};
-
-export function quickRead(piece: Piece, from: { x: number; y: number }, all: Piece[]): QuickRead {
-  const dy = piece.y - from.y; // negative = pushed UP toward opponent
-  const dx = piece.x - from.x;
-  const gains: string[] = [];
-  const risks: string[] = [];
-  const word = ROLE_WORDS[piece.role];
-
-  // sanity alarm before anything else: a keeper above halfway is an
-  // emergency posture, whatever else the move does
-  if (piece.role === "GK" && piece.y < 55) {
-    return { gains: ["+1 outfield body for one desperate phase"], risks: ["Your net is EMPTY — any turnover is a goal against"] };
-  }
-  if (dy < -8) {
-    if (piece.role === "CB") { gains.push("Extra man ahead of the ball — breaks their first line"); risks.push("Space in behind the back line — who slides across?"); }
-    if (piece.role === "FB") { gains.push("Width and overlap threat — pins their winger back"); risks.push("Your flank is open on the counter — a mid must cover"); }
-    if (piece.role === "DM") { gains.push("Numbers in the press / final third"); risks.push("No screen in front of the defense — their 10 gets the pocket"); }
-    if (piece.role === "CM" || piece.role === "AM") { gains.push("Support arrives higher — more bodies in the box"); risks.push("Longer recovery run when it turns over"); }
-    if (piece.role === "ST" || piece.role === "W") { gains.push("Stretches their line — more space between their units"); risks.push("Bigger gap back to your midfield — link play gets harder"); }
-    if (piece.role === "GK") { gains.push("True +1 in build-up"); risks.push("The long ball over the top is now a footrace to an empty net"); }
-  } else if (dy > 8) {
-    gains.push(`Deeper ${word} — more security behind the ball`);
-    if (piece.role === "ST") risks.push("No depth up top — their line steps up and squeezes you");
-    else if (piece.role === "W") risks.push("You've conceded the wing — their fullback is free");
-    else risks.push("One fewer option ahead of the ball in possession");
-  }
-  if (Math.abs(dx) > 12) {
-    const inward = Math.abs(piece.x - 50) < Math.abs(from.x - 50);
-    if (inward) { gains.push("Central overload — extra body in the half-space"); risks.push("Width lost on that side — switches of play will hurt"); }
-    else { gains.push("Real width — stretches their block side to side"); risks.push("Bigger gaps inside for through balls"); }
-  }
-  // spacing diagnostics against the rest of the shape
-  const nearest = Math.min(...all.filter((p) => p.id !== piece.id).map((p) => Math.hypot(p.x - piece.x, p.y - piece.y)));
-  if (nearest > 26) risks.push("Isolated — no support angle within a pass");
-  if (nearest < 7) risks.push("Two players in one zone — one pass beats both");
-  return { gains: gains.slice(0, 2), risks: risks.slice(0, 2) };
-}
-
-// ---------------------------------------------------------------------------
-// The whole-board read: what a coach would say about the SHAPE the moves have
-// built — cumulative, not per-move. Recomputed after every drag; this is the
-// overall instruction that individual move cards can't give.
-// ---------------------------------------------------------------------------
-
-export interface BoardRead {
-  headline: string;
-  lines: { tone: "good" | "warn"; text: string }[];
-}
-
-export function boardAssessment(pieces: Piece[]): BoardRead {
-  const field = pieces.filter((p) => p.role !== "GK" && p.role !== "OPP");
-  const gk = pieces.find((p) => p.role === "GK");
-  const lines: BoardRead["lines"] = [];
-  if (field.length < 3) return { headline: "Not enough pieces to read a shape.", lines };
-
-  // line structure: defenders / links / attackers by depth band
-  const def = field.filter((p) => p.y >= 62);
-  const mid = field.filter((p) => p.y >= 38 && p.y < 62);
-  const att = field.filter((p) => p.y < 38);
-  const structure = `${def.length}-${mid.length}-${att.length}`;
-
-  if (gk && gk.y < 60) lines.push({ tone: "warn", text: "Your keeper is upfield — the goal is UNGUARDED. Everything else is secondary." });
-  if (att.length >= 3 && mid.length <= 1) {
-    lines.push({ tone: "warn", text: `${att.length} committed ahead of the ball with ${mid.length === 0 ? "NOBODY" : "only one player"} linking — defense and attack are two separate teams right now` });
-  }
-  if (def.length === 0) lines.push({ tone: "warn", text: "No outfield player is holding the back — any turnover is a clean run at goal" });
-
-  // the biggest hole between consecutive players top to bottom
-  const ys = field.map((p) => p.y).sort((a, b) => a - b);
-  let gap = 0, gapAt = 50;
-  for (let i = 1; i < ys.length; i++) {
-    if (ys[i] - ys[i - 1] > gap) { gap = ys[i] - ys[i - 1]; gapAt = (ys[i] + ys[i - 1]) / 2; }
-  }
-  if (gap > 30) lines.push({ tone: "warn", text: `There's a ${Math.round(gap)}-yard hole through the ${gapAt < 45 ? "attacking" : gapAt > 60 ? "defensive" : "middle"} third — one pass through it beats the whole team` });
-
-  // lateral lean: a shape leaning one way with no ball-side reason
-  const meanX = field.reduce((s, p) => s + p.x, 0) / field.length;
-  if (Math.abs(meanX - 50) > 16) {
-    lines.push({ tone: "warn", text: `The whole shape leans ${meanX < 50 ? "left" : "right"} — the far side is one switch away from being wide open` });
-  }
-
-  // isolated players
-  const isolated = field.filter((p) => Math.min(...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 26);
-  if (isolated.length) lines.push({ tone: "warn", text: `${isolated.map((p) => p.label).join(" + ")} ${isolated.length === 1 ? "is" : "are"} stranded — no support angle within a pass` });
-
-  if (lines.length === 0) {
-    lines.push({ tone: "good", text: `Connected ${structure} structure — every line within a pass of the next, both flanks honest` });
-  }
-  const worst = lines.filter((l) => l.tone === "warn").length;
-  return {
-    headline: worst === 0
-      ? `Balanced ${structure} — this shape can play`
-      : worst === 1
-        ? `${structure} with one problem to fix before anything else`
-        : `${structure} — this shape has ${worst} problems; fix the first one first`,
-    lines,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Text -> scenario: keyword matcher used by DEMO mode to pick the closest
 // authored picture for a described situation. The live engine paints the
 // exact scenario; this keeps the board alive without a key. Order matters —
@@ -1216,12 +1035,12 @@ export function boardAssessment(pieces: Piece[]): BoardRead {
 export function scenarioFromText(text: string): ScenarioId | null {
   const t = text.toLowerCase();
   const table: [ScenarioId, RegExp][] = [
-    ["defCross", /defend(ing)?\s+(the\s+)?cross|crosses (against|coming)|corner(s)? against|box defend/],
+    ["defCross", /defend(ing)?\s+(the\s+)?(cross|box|corner)|defend(ing)? set pieces|stop .{0,24}cross|(they|their) .{0,16}cross(es)?\b|crosses? (against|(are )?coming)|corner(s)? against|box defend/],
     ["defTransition", /counter.?press|after (losing|we lose)|lost the ball|lose the ball|5.second|react.*turnover|win it back (right away|immediately)/],
-    ["lowblock", /low block|park(ed)?|deep block|bunker|defend (a |the )?lead|minutes left|see (it|the game) out|hold (on|the lead)|protect the lead|throwing (numbers|everyone|players)|everyone forward|up \d+.\d+/],
+    ["lowblock", /low block|park (the )?bus|\bparked\b|deep block|bunker|defend (a |the )?lead|see (it|the game) out|hold (on|the lead)|protect the lead|kill the game|(we'?re|we are) (up|winning) \d+\D{0,2}\d+|(they|their).{0,30}(throwing (numbers|everyone|players)|everyone forward)/],
     ["attTransition", /counter.?attack|fast break|break (quickly|fast)|transition to attack|win the ball.*(counter|go|fast|quick)|moment we win/],
     ["midblock", /mid block|midblock|sit mid|medium block|shift together|compact.*(middle|block)|screen.*pivot/],
-    ["highpress", /high press|press (their|them|the keeper|the goalie)|we press|press.*high up|trap.*touchline|touchline.*trap|force.*wide.*(trap|press)|win it high/],
+    ["highpress", /high press|press (their|them|the keeper|the goalie)|we press|press(ing)? (them |the )?high\b|trap.*touchline|touchline.*trap|force.*wide.*(trap|press)|win it high/],
     ["buildup", /they press us|press us|build.?out|build.?up|play(ing)? out|goal kick|from the back|beat (the|their) press|break (the|their) press|first line/],
     ["wideAttack", /wide|overload|byline|cutback|cross(es|ing)? (from|into)|flank|isolat.*(winger|back)|switch.*attack/],
   ];
@@ -1253,11 +1072,13 @@ export function geometryFacts(ours: Piece[], opps: Piece[]): string[] {
   const meanX = field.reduce((s, p) => s + p.x, 0) / field.length;
   if (Math.abs(meanX - 50) > 12) facts.push(`Our shape leans ${meanX < 50 ? "left" : "right"} (mean x=${Math.round(meanX)})`);
 
-  const isolated = field.filter((p) => Math.min(...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 26);
+  // >36: stock shapes legitimately reach 35.4 (a 4-2-3-1 winger holding
+  // width) — the flag is for genuinely stranded players, never a base picture
+  const isolated = field.filter((p) => Math.min(...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 36);
   if (isolated.length) facts.push(`Isolated (no teammate within a pass): ${isolated.map((p) => p.label).join(", ")}`);
 
   if (opps.length) {
-    facts.push(`Their shape by thirds (from our view): ${band(opps, 62, 101)} in our defensive third / ${band(opps, 38, 62)} middle / ${band(opps, 0, 38)} in their half`);
+    facts.push(`Their shape by thirds (from our view): ${band(opps, 62, 101)} in our defensive third / ${band(opps, 38, 62)} middle / ${band(opps, 0, 38)} in their defensive third`);
     const ourFree = field.filter((p) => Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 12).map((p) => p.label);
     if (ourFree.length) facts.push(`OUR players with no opponent within 12 units: ${ourFree.join(", ")}`);
     const theirFree = opps.filter((o) => Math.min(...ours.map((p) => Math.hypot(p.x - o.x, p.y - o.y))) > 13).map((o) => o.label);

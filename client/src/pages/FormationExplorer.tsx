@@ -96,6 +96,10 @@ export function FormationExplorer() {
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
+  // guards the in-flight paint: a stale response must never land on a board
+  // the coach has since switched away from
+  const paintSeq = useRef(0);
+
   const formation = FORMATIONS.find((f) => f.id === formationId) ?? FORMATIONS[0];
   const formationsForFormat = FORMATIONS.filter((f) => f.format === format);
 
@@ -154,6 +158,8 @@ export function FormationExplorer() {
   }
 
   function clearPaint() {
+    paintSeq.current++; // orphan any in-flight paint
+    setPainting(false);
     stopPlayback();
     setPaint(null);
     setEdits(new Map());
@@ -217,6 +223,7 @@ export function FormationExplorer() {
 
   // ---- the paint ----
   async function drawItUp() {
+    if (painting) return; // Enter key + button can both fire — one paint at a time
     const text = scenarioText.trim();
     if (!text) {
       setError('Describe the situation — e.g. "they press us high on goal kicks, show me how we build out".');
@@ -251,6 +258,7 @@ export function FormationExplorer() {
 
     // LIVE: verified facts in, hard validation out (one silent retry on a bad paint)
     setPainting(true);
+    const seq = ++paintSeq.current; // clearPaint() bumps this — a stale response must not land
     const facts = geometryFacts(pieces, oppPieces);
     const body = {
       format,
@@ -265,6 +273,7 @@ export function FormationExplorer() {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const r = await sendJSON<{ picture: PaintedPicture; award: AwardResult; readsLeft: number }>("/api/board/scenario", body);
+        if (seq !== paintSeq.current) return; // board switched away mid-flight — discard
         const byLabel = new Map(r.picture.positions.map((p) => [p.label, p]));
         const matchedCount = formation.pieces.filter((p) => byLabel.has(p.label)).length;
         if (matchedCount < Math.ceil(formation.pieces.length * 0.8)) throw new Error("incomplete-paint");
@@ -286,6 +295,7 @@ export function FormationExplorer() {
         setPainting(false);
         return;
       } catch (e) {
+        if (seq !== paintSeq.current) return; // board switched away mid-flight — discard
         const msg = e instanceof Error ? e.message : "Paint failed";
         if (msg === "incomplete-paint" && attempt === 0) continue; // one silent retry
         setError(msg === "incomplete-paint" ? "The engine returned an incomplete picture twice — try rewording the scenario." : msg);

@@ -2,9 +2,9 @@ import { useState } from "react";
 import { FieldBoard } from "./FieldBoard";
 import { FormationExplorer } from "./FormationExplorer";
 
-// The Tactics Board, promoted to a first-class destination: the formation
-// board (scenarios, playback, chess-mode engine reads, opposition) with the
-// freehand drill sketchpad one chip away.
+// The Tactics Board, promoted to a first-class destination: the tactical
+// painter (describe a situation, get the picture, ball route and callouts)
+// with the freehand drill sketchpad one chip away.
 export function TacticsPage() {
   const [mode, setMode] = useState<"formations" | "freehand">("formations");
   return (
@@ -17,8 +17,8 @@ export function TacticsPage() {
         </div>
       </div>
       <p className="sub">
-        Every formation, every scenario, animated — then move a player like a chess piece and the engine tells you what you gained
-        and what you gave away. Put the opposition on the pitch and every read answers against them.
+        Pick your formation, put the opposition on the pitch, then describe the situation in your own words — the engine paints
+        the answer: where everyone stands, where the ball should travel, and what to shout from the touchline.
       </p>
       {mode === "formations" ? <FormationExplorer /> : <FieldBoard />}
     </div>

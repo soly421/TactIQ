@@ -141,7 +141,7 @@ export function Auth({ onAuthed }: { onAuthed: (user: User) => void }) {
             <ul className="points" style={{ margin: "8px 0 0" }}>
               <li>An AI assistant coach that remembers your whole season — roster, results, sessions</li>
               <li>Real training sessions with animated diagrams, built for your age group</li>
-              <li>The interactive Tactics Board: every formation, every scenario, engine reads on every move</li>
+              <li>The interactive Tactics Board: pick a formation, describe any situation, and it paints the answer — positions, the ball's route, the instructions</li>
               <li>Match Day prep and post-game debriefs, plus a staff of coaching minds to argue with</li>
             </ul>
           </div>

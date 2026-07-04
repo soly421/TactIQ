@@ -1,4 +1,4 @@
-import { db, today } from "./db.js";
+import { db } from "./db.js";
 
 // DB-backed repository. All data is per-user.
 
@@ -360,7 +360,6 @@ export function setPlanTier(userId: number, plan: "free" | "pro"): void {
 }
 
 
-export { today };
 
 // ---- club helpers ----
 export function getUserClub(userId: number): { id: number; name: string; code: string; philosophy: string; role: string } | null {

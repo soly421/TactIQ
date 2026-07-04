@@ -187,10 +187,6 @@ CREATE TABLE IF NOT EXISTS model_calls (
 CREATE INDEX IF NOT EXISTS idx_model_calls_user ON model_calls(user_id, id DESC);
 `);
 
-export function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // Idempotent column adds for older databases.
 try { db.exec("ALTER TABLE clubs ADD COLUMN philosophy TEXT NOT NULL DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"); } catch { /* exists */ }
@@ -208,7 +204,6 @@ try { db.exec("ALTER TABLE users ADD COLUMN club_name TEXT DEFAULT ''"); } catch
 try { db.exec("ALTER TABLE users ADD COLUMN club_size TEXT DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN challenge TEXT DEFAULT ''"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN club_interest INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
-try { db.exec("ALTER TABLE progress ADD COLUMN league INTEGER NOT NULL DEFAULT 0"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE season_entries ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE schedule_events ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
 try { db.exec("ALTER TABLE library_plans ADD COLUMN team_id INTEGER"); } catch { /* exists */ }
