@@ -6,7 +6,7 @@ import { TacticsBoard } from "../components/TacticsBoard";
 import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
 import {
-  CHOREO, FORMATIONS, SCENARIOS, applyScenario, matchupCallouts, quickRead, resolveBallPath, shapeMeters,
+  CHOREO, FORMATIONS, SCENARIO_BALL, SCENARIOS, applyScenario, boardAssessment, matchupCallouts, quickRead, resolveBallPath, shapeMeters,
   type Formation, type Piece, type ScenarioId,
 } from "../formations";
 import type { AwardResult, FormationAnalysis } from "../types";
@@ -153,6 +153,9 @@ export function FormationExplorer() {
   }, [playing, wave, scenario, formation, scenarioPieces]);
 
   const meters = shapeMeters(scenarioPieces);
+  // The whole-board read: the cumulative coaching view of the shape ALL the
+  // coach's moves have built — the overall instruction per-move cards miss.
+  const boardRead = useMemo(() => boardAssessment(scenarioPieces), [scenarioPieces]);
   // The matchup layer: instructions + recommended ball route against the
   // placed opposition, recomputed on every drag of either color.
   const [showTips, setShowTips] = useState(true);
@@ -487,7 +490,7 @@ export function FormationExplorer() {
               <div className="small" style={{ fontWeight: 700, marginBottom: 6 }}>
                 {SCENARIOS.find((x) => x.id === s)!.emoji} {SCENARIOS.find((x) => x.id === s)!.name}
               </div>
-              <TacticsBoard pieces={applyScenario(formation, s)} opponents={oppPieces} />
+              <TacticsBoard pieces={applyScenario(formation, s)} opponents={oppPieces} ball={SCENARIO_BALL[s] ?? null} />
             </div>
           ))}
         </div>
@@ -503,7 +506,7 @@ export function FormationExplorer() {
                 onMoveOpp={moveOpp}
                 onRemoveOpp={removeOpp}
                 highlight={playing ? null : hotPiece}
-                ball={ball}
+                ball={playing ? ball : SCENARIO_BALL[scenario] ?? null}
                 callouts={tipsOn && !playing ? matchup.callouts : undefined}
                 suggestedPath={tipsOn ? matchup.ballPath : undefined}
               />
@@ -531,6 +534,18 @@ export function FormationExplorer() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* the whole-board read — the shape ALL the moves built, not one move */}
+            {edits.size > 0 && (
+              <div className="card fade-in" style={{ borderTop: "3px solid var(--gold, #ffd166)" }}>
+                <h3 style={{ margin: 0 }}>📋 Whole-board read <span className="muted small">after your {edits.size} change{edits.size === 1 ? "" : "s"}</span></h3>
+                <p className="small" style={{ fontWeight: 700, margin: "6px 0 4px" }}>{boardRead.headline}</p>
+                {boardRead.lines.map((l, i) => (
+                  <div key={i} className={`er-line ${l.tone === "good" ? "gain" : "risk"}`}>{l.tone === "good" ? "✓" : "⚠"} {l.text}</div>
+                ))}
+                <p className="muted small" style={{ margin: "6px 0 0" }}>Recomputed from every piece after each move — this is the shape you've built, not the last move alone.</p>
+              </div>
+            )}
+
             {/* the matchup plan — numbered to match the badges on the pitch */}
             {tipsOn && matchup.callouts.length > 0 && (
               <div className="card fade-in" style={{ borderTop: "3px solid #4cc9f0" }}>

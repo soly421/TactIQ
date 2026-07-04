@@ -534,6 +534,20 @@ export function applyScenario(f: Formation, s: ScenarioId): Piece[] {
 
 export type WaveOrder = Role[][];
 
+// Where the ball IS in each scenario picture. Defensive shapes are shifted
+// toward this point (the zonal-shift doctrine) — showing it is what makes a
+// ball-side-leaning block read as coaching instead of chaos.
+export const SCENARIO_BALL: Partial<Record<ScenarioId, { x: number; y: number }>> = {
+  buildup: { x: 50, y: 88 },
+  highpress: { x: 14, y: 26 },
+  midblock: { x: 76, y: 28 },
+  lowblock: { x: 84, y: 68 },
+  attTransition: { x: 46, y: 56 },
+  defTransition: { x: 50, y: 42 },
+  wideAttack: { x: 86, y: 18 },
+  defCross: { x: 16, y: 76 },
+};
+
 export interface Choreo {
   // each waypoint: role to anchor to (picked by preference order) or raw point
   ball: ({ role: Role; pick: "left" | "right" | "center" | "high" } | { x: number; y: number })[];
@@ -553,15 +567,16 @@ export const CHOREO: Partial<Record<ScenarioId, Choreo>> = {
   },
   midblock: {
     // they circulate left then right; the block's end picture is the
-    // ball-side shift onto their right-flank carrier
+    // ball-side shift onto their right-flank carrier. The block moves as
+    // ONE unit — "shift together" is the entire point of the drill.
     ball: [{ x: 50, y: 22 }, { x: 24, y: 28 }, { x: 76, y: 28 }],
-    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+    waves: [["ST", "W", "AM", "CM", "DM", "CB", "FB", "GK"]],
   },
   lowblock: {
     // ball worked to their winger on our right, cross comes in, first
-    // contact clears it to the outlet at halfway
+    // contact clears it to the outlet at halfway. One unit, one slide.
     ball: [{ x: 72, y: 56 }, { x: 84, y: 68 }, { x: 55, y: 84 }, { role: "ST", pick: "center" }],
-    waves: [["ST", "W", "AM"], ["CM", "DM"], ["CB", "FB", "GK"]],
+    waves: [["ST", "W", "AM", "CM", "DM", "CB", "FB", "GK"]],
   },
   attTransition: {
     ball: [{ x: 46, y: 56 }, { role: "CM", pick: "center" }, { role: "W", pick: "right" }, { role: "ST", pick: "center" }],
@@ -1128,6 +1143,67 @@ export function quickRead(piece: Piece, from: { x: number; y: number }, all: Pie
   if (nearest > 26) risks.push("Isolated — no support angle within a pass");
   if (nearest < 7) risks.push("Two players in one zone — one pass beats both");
   return { gains: gains.slice(0, 2), risks: risks.slice(0, 2) };
+}
+
+// ---------------------------------------------------------------------------
+// The whole-board read: what a coach would say about the SHAPE the moves have
+// built — cumulative, not per-move. Recomputed after every drag; this is the
+// overall instruction that individual move cards can't give.
+// ---------------------------------------------------------------------------
+
+export interface BoardRead {
+  headline: string;
+  lines: { tone: "good" | "warn"; text: string }[];
+}
+
+export function boardAssessment(pieces: Piece[]): BoardRead {
+  const field = pieces.filter((p) => p.role !== "GK" && p.role !== "OPP");
+  const gk = pieces.find((p) => p.role === "GK");
+  const lines: BoardRead["lines"] = [];
+  if (field.length < 3) return { headline: "Not enough pieces to read a shape.", lines };
+
+  // line structure: defenders / links / attackers by depth band
+  const def = field.filter((p) => p.y >= 62);
+  const mid = field.filter((p) => p.y >= 38 && p.y < 62);
+  const att = field.filter((p) => p.y < 38);
+  const structure = `${def.length}-${mid.length}-${att.length}`;
+
+  if (gk && gk.y < 60) lines.push({ tone: "warn", text: "Your keeper is upfield — the goal is UNGUARDED. Everything else is secondary." });
+  if (att.length >= 3 && mid.length <= 1) {
+    lines.push({ tone: "warn", text: `${att.length} committed ahead of the ball with ${mid.length === 0 ? "NOBODY" : "only one player"} linking — defense and attack are two separate teams right now` });
+  }
+  if (def.length === 0) lines.push({ tone: "warn", text: "No outfield player is holding the back — any turnover is a clean run at goal" });
+
+  // the biggest hole between consecutive players top to bottom
+  const ys = field.map((p) => p.y).sort((a, b) => a - b);
+  let gap = 0, gapAt = 50;
+  for (let i = 1; i < ys.length; i++) {
+    if (ys[i] - ys[i - 1] > gap) { gap = ys[i] - ys[i - 1]; gapAt = (ys[i] + ys[i - 1]) / 2; }
+  }
+  if (gap > 30) lines.push({ tone: "warn", text: `There's a ${Math.round(gap)}-yard hole through the ${gapAt < 45 ? "attacking" : gapAt > 60 ? "defensive" : "middle"} third — one pass through it beats the whole team` });
+
+  // lateral lean: a shape leaning one way with no ball-side reason
+  const meanX = field.reduce((s, p) => s + p.x, 0) / field.length;
+  if (Math.abs(meanX - 50) > 16) {
+    lines.push({ tone: "warn", text: `The whole shape leans ${meanX < 50 ? "left" : "right"} — the far side is one switch away from being wide open` });
+  }
+
+  // isolated players
+  const isolated = field.filter((p) => Math.min(...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 26);
+  if (isolated.length) lines.push({ tone: "warn", text: `${isolated.map((p) => p.label).join(" + ")} ${isolated.length === 1 ? "is" : "are"} stranded — no support angle within a pass` });
+
+  if (lines.length === 0) {
+    lines.push({ tone: "good", text: `Connected ${structure} structure — every line within a pass of the next, both flanks honest` });
+  }
+  const worst = lines.filter((l) => l.tone === "warn").length;
+  return {
+    headline: worst === 0
+      ? `Balanced ${structure} — this shape can play`
+      : worst === 1
+        ? `${structure} with one problem to fix before anything else`
+        : `${structure} — this shape has ${worst} problems; fix the first one first`,
+    lines,
+  };
 }
 
 // Live shape meters — the FIFA-style bars that move while you drag.

@@ -44,3 +44,17 @@ integration suite.
 ```bash
 node checks/browser-sweep.mjs
 ```
+
+## 5. AI doctrine review (`ai-doctrine-review.mjs`) — run when the key lands
+One-time expert audit of ALL authored tactical content by claude-opus-4-8
+acting as a licensed-coach panel: the 8 scenario picture sets (20 formations
+each), representative matchup callouts + ball routes, and the 16 advisor
+doctrines. Breaks the author-validates-own-work circularity.
+
+```bash
+node checks/ai-doctrine-review.mjs --dry          # preview prompts, no calls
+ANTHROPIC_API_KEY=sk-... node checks/ai-doctrine-review.mjs
+```
+Writes `checks/doctrine-review-report.md`. Apply CRITICAL/MODERATE findings
+back to `client/src/formations.ts` / `server/src/personas.ts`, then re-run
+`npm run check:formations`.

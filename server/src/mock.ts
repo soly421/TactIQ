@@ -445,6 +445,20 @@ export function mockBoardVerdict(args: {
   if (nearest > 26) risks.push("Isolated — no support angle within a pass");
   if (gk && gk.label !== label && Number(gk.y) < 60) risks.push("Meanwhile your keeper is stranded upfield — the goal is unguarded");
 
+  // cumulative structure: this move judged against the WHOLE shape the
+  // coach's earlier moves built, so consecutive moves read differently
+  const outfield = board.filter((p) => p.role !== "GK");
+  const attCount = outfield.filter((p) => Number(p.y) < 38).length;
+  const midCount = outfield.filter((p) => Number(p.y) >= 38 && Number(p.y) < 62).length;
+  if (dy < -6 && attCount >= 3 && midCount <= 1) {
+    risks.push(`That's now ${attCount} ahead of the ball with ${midCount === 0 ? "NOBODY" : "one player"} linking — the team is cut in two`);
+    counterMove = "Stop pushing players up — drop one back into midfield to reconnect the lines first.";
+  }
+  const ys = outfield.map((p) => Number(p.y)).sort((a, b) => a - b);
+  let vGap = 0;
+  for (let i = 1; i < ys.length; i++) vGap = Math.max(vGap, ys[i] - ys[i - 1]);
+  if (vGap > 30) risks.push(`This shape now has a ${Math.round(vGap)}-yard hole between its lines — one pass beats everyone`);
+
   const verdictWord = risks.length > gains.length ? "high risk for the reward" : gains.length > risks.length ? "good value" : "a trade — control for cover";
   return {
     headline: `${label} → ${dir}: ${verdictWord} (demo read)`,
