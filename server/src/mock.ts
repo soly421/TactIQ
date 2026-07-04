@@ -355,6 +355,105 @@ export function mockFormation(format?: string): typeof MOCK_FORMATION {
   return MOCK_FORMATION;
 }
 
+// Demo-mode board verdict: computed from the ACTUAL move, board, and
+// opposition — role-aware, direction-aware, with sanity alarms — so demo
+// reads differ per move exactly like live ones. Only the depth of judgment
+// is missing without a key, never the specificity.
+interface BoardPieceIn { label?: string; role?: string; x?: number; y?: number }
+
+export function mockBoardVerdict(args: {
+  move?: string;
+  question?: string;
+  board: BoardPieceIn[];
+  opponents: BoardPieceIn[];
+}): { headline: string; gains: string[]; risks: string[]; counterMove: string } {
+  const { board, opponents } = args;
+  const gains: string[] = [];
+  const risks: string[] = [];
+  let counterMove = "Re-balance behind the ball before the next phase.";
+  const gk = board.find((p) => p.role === "GK");
+
+  if (args.question) {
+    if (gk && Number(gk.y) < 60) risks.push(`Your keeper is at [${Math.round(Number(gk.x))},${Math.round(Number(gk.y))}] — the goal behind him is unguarded`);
+    gains.push(`Reading ${board.length} of your pieces${opponents.length ? ` against ${opponents.length} of theirs` : ""} — the live engine answers your exact question on this picture`);
+    if (!risks.length) risks.push("Demo mode: judgment is canned until ANTHROPIC_API_KEY is set — the board reading above is real");
+    return {
+      headline: `Demo read — live engine would answer: "${String(args.question).slice(0, 60)}"`,
+      gains, risks,
+      counterMove: "Add the engine key on the server for live tactical judgment on every question.",
+    };
+  }
+
+  const m = /^(\S+) \((\w+)\) from \[(-?\d+),(-?\d+)\] to \[(-?\d+),(-?\d+)\]/.exec(String(args.move ?? ""));
+  if (!m) {
+    return {
+      headline: "Demo read — move the pieces and every read answers the exact board",
+      gains: ["The instant reads under each move are computed live from your positions"],
+      risks: ["Full tactical judgment needs the engine key"],
+      counterMove: "Set ANTHROPIC_API_KEY on the server for live verdicts.",
+    };
+  }
+  const [, label, role, , fyS, txS, tyS] = m;
+  const tx = Number(txS), ty = Number(tyS), fy = Number(fyS);
+  const dy = ty - fy;
+  const dir = dy < -6 ? "up the pitch" : dy > 6 ? "deeper" : "across";
+
+  // sanity alarms first — an absurd placement gets an honest alarm, not praise
+  if (role === "GK" && ty < 55) {
+    return {
+      headline: `${label} above halfway is a kitchen-sink move (demo read)`,
+      gains: ["+1 outfield body for one desperate phase"],
+      risks: ["Your net is EMPTY — any turnover from here is a goal against", "Only defensible in the final minutes chasing the game"],
+      counterMove: "Get the keeper home and rebuild the +1 from the back — this is not a base shape.",
+    };
+  }
+  if ((role === "CB" || role === "FB") && ty < 20) {
+    risks.push(`Your ${label} is in THEIR box — nobody is defending the space he left`);
+    counterMove = "Send him only for set pieces; in open play a midfielder makes this run instead.";
+  }
+
+  // direction/role doctrine (mirrors the instant local read)
+  if (dy < -6) {
+    if (role === "CB") { gains.push("Extra man steps past their first line"); risks.push("Space in behind the back line — who slides across?"); counterMove = "The near-side mid drops a line to cover the step."; }
+    else if (role === "FB") { gains.push("Width and the overlap threat — pins their winger back"); risks.push("Your flank is open on the counter"); counterMove = "The near CM shades over while the fullback is high."; }
+    else if (role === "DM") { gains.push("Extra body in the press/final third"); risks.push("No screen in front of the defense — their 10 gets the pocket"); counterMove = "Only jump when the back line squeezes with you."; }
+    else if (role === "GK") { gains.push("True +1 in build-up"); risks.push("The ball over the top is now a footrace"); }
+    else { gains.push("Support arrives higher — more bodies near the goal"); risks.push("Longer recovery run when it turns over"); }
+  } else if (dy > 6) {
+    gains.push(`Deeper ${label} — more security behind the ball`);
+    if (role === "ST") risks.push("No depth up top — their line steps up and squeezes you");
+    else if (role === "W") risks.push("You've conceded the wing — their fullback is free");
+    else risks.push("One fewer option ahead of the ball");
+    counterMove = "Someone else must give the depth or the shape plays in its own half.";
+  } else {
+    gains.push(`${label} shifts across — the shape follows the ball side`);
+  }
+
+  // opposition proximity at the destination
+  if (opponents.length) {
+    let best = Infinity, near: BoardPieceIn | null = null;
+    for (const o of opponents) {
+      const d = Math.hypot(Number(o.x) - tx, Number(o.y) - ty);
+      if (d < best) { best = d; near = o; }
+    }
+    if (near && best < 8) risks.unshift(`Right into their ${near.label}'s zone — expect instant pressure`);
+    else if (best > 20 && dy < -6) gains.unshift(`Free space — no red shirt within ${Math.round(best)} of the new spot`);
+  }
+
+  // spacing vs the rest of the shape
+  const nearest = Math.min(...board.filter((p) => p.label !== label).map((p) => Math.hypot(Number(p.x) - tx, Number(p.y) - ty)), Infinity);
+  if (nearest > 26) risks.push("Isolated — no support angle within a pass");
+  if (gk && gk.label !== label && Number(gk.y) < 60) risks.push("Meanwhile your keeper is stranded upfield — the goal is unguarded");
+
+  const verdictWord = risks.length > gains.length ? "high risk for the reward" : gains.length > risks.length ? "good value" : "a trade — control for cover";
+  return {
+    headline: `${label} → ${dir}: ${verdictWord} (demo read)`,
+    gains: gains.slice(0, 3),
+    risks: risks.slice(0, 3),
+    counterMove,
+  };
+}
+
 export const MOCK_CHAT_REPLY =
   "[Demo mode — set ANTHROPIC_API_KEY for live coaching conversations]\n\nGood question, coach. Before I give you an answer, tell me three things: what age group are we working with, what shape do you currently play, and where exactly is the problem showing up — build-up, middle third, or final third? The answer changes completely depending on those details. A U10 team losing the ball in build-up needs a different picture than a U15 team that can't break a low block.";
 

@@ -1100,6 +1100,11 @@ export function quickRead(piece: Piece, from: { x: number; y: number }, all: Pie
   const risks: string[] = [];
   const word = ROLE_WORDS[piece.role];
 
+  // sanity alarm before anything else: a keeper above halfway is an
+  // emergency posture, whatever else the move does
+  if (piece.role === "GK" && piece.y < 55) {
+    return { gains: ["+1 outfield body for one desperate phase"], risks: ["Your net is EMPTY — any turnover is a goal against"] };
+  }
   if (dy < -8) {
     if (piece.role === "CB") { gains.push("Extra man ahead of the ball — breaks their first line"); risks.push("Space in behind the back line — who slides across?"); }
     if (piece.role === "FB") { gains.push("Width and overlap threat — pins their winger back"); risks.push("Your flank is open on the counter — a mid must cover"); }

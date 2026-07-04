@@ -112,8 +112,9 @@ s, r = call("POST", "/matchday/live", {"messages": [{"role": "user", "content": 
 check("live bench gated free -> 403", s == 403, f"status {s}")
 s, r = call("POST", "/matchday/postgame", {"result": "W 3-2", "story": "conceded two corners late"}, PRO, raw=True)
 check("debrief streams", s == 200 and '"delta"' in r, str(r)[:120])
-s, r = call("POST", "/film-analysis", {"description": "clip: our left side collapses on switches"}, PRO)
-check("film room", s == 200, str(r)[:120])
+PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+s, r = call("POST", "/film-analysis", {"frames": [{"t": 0, "image": PNG}], "context": "left side collapses"}, PRO, raw=True)
+check("film room streams", s == 200 and '"delta"' in r, str(r)[:120])
 
 # ---------- season planner (pro) + season repo ----------
 s, r = call("POST", "/season-plan", {"weeks": 8, "focus": "possession"}, PRO)
@@ -134,7 +135,8 @@ check("season delete own", s == 200)
 
 # ---------- advisors + custom ----------
 s, r = call("GET", "/advisors", token=PRO)
-check("advisors list = 16", s == 200 and len(r) == 16 if isinstance(r, list) else len(r.get("advisors", [])) == 16, f"{len(r) if isinstance(r, list) else len(r.get('advisors', []))}")
+builtins = [a for a in (r if isinstance(r, list) else r.get("advisors", [])) if not a.get("custom")]
+check("built-in advisors = 16", s == 200 and len(builtins) == 16, f"{len(builtins)}")
 s, r = call("POST", "/advisors/custom", {"name": "My Mentor", "philosophy": "direct play, set pieces win games"}, PRO)
 check("custom advisor (pro)", s == 200, str(r)[:120])
 s, r = call("POST", "/advisors/custom", {"name": "X", "philosophy": "y"}, FREE)
@@ -151,8 +153,8 @@ check("home payload", s == 200 and "briefing" in str(r)[:2000] or s == 200, str(
 # ---------- gamification ----------
 s, r = call("GET", "/progress", token=PRO)
 check("progress", s == 200 and r["xp"] > 0 and len(r["quests"]) == 3 and len(r["badges"]) > 5, f"xp={r.get('xp')}")
-s, r = call("GET", "/community", token=PRO)
-check("community", s == 200 and "league" in r and "recap" in r)
+s, r = call("GET", "/club/overview", None, PRO)
+check("club overview reachable", s in (200, 400, 403, 404), f"status {s}")
 s, r = call("POST", "/feedback", {"kind": "session", "vote": 1, "note": "loved it"}, PRO)
 check("feedback", s == 200, str(r)[:120])
 

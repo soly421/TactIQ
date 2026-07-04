@@ -7,7 +7,7 @@ import { generateText, bandFor as bandForAgeServer, generateStructured, streamTo
 import { streamText } from "./providers.js";
 import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
-  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN, mockSeasonPlan,
+  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN, mockBoardVerdict, mockSeasonPlan,
 } from "./mock.js";
 import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry, refundMessage, topAdvisorNames, setUserTz, userToday,
   adminOverview, estCostToday, getUserBilling, markClubInterest,
@@ -993,14 +993,12 @@ ${question
   : "Evaluate THIS move in the context of the whole current shape and the opposition."}`,
       schema: BOARD_VERDICT_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: 500,
-      mock: {
-        headline: question
-          ? `Demo read — with a live engine key this answers your exact question against this board`
-          : `${String(move).split(" ")[0]}: bold — cover traded for control (demo read)`,
-        gains: ["Extra man ahead of the ball in build-up", "Their pivot now has two problems to mark"],
-        risks: ["The vacated zone is open for their counter", "Back line must shift across to cover"],
-        counterMove: "Drop the near-side midfielder one line to screen the gap.",
-      },
+      mock: mockBoardVerdict({
+        move: move ? String(move) : undefined,
+        question: question ? String(question) : undefined,
+        board: board as { label?: string; role?: string; x?: number; y?: number }[],
+        opponents: Array.isArray(opponents) ? (opponents as { label?: string; x?: number; y?: number }[]) : [],
+      }),
     });
     if (question) {
       addSeasonEntry(userId, {
