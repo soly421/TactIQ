@@ -6,7 +6,7 @@ import { TacticsBoard } from "../components/TacticsBoard";
 import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
 import {
-  CHOREO, FORMATIONS, SCENARIOS, applyScenario, quickRead, resolveBallPath, shapeMeters,
+  CHOREO, FORMATIONS, SCENARIOS, applyScenario, matchupCallouts, quickRead, resolveBallPath, shapeMeters,
   type Formation, type Piece, type ScenarioId,
 } from "../formations";
 import type { AwardResult, FormationAnalysis } from "../types";
@@ -47,7 +47,7 @@ function mirrorOpponents(f: Formation, posture: ScenarioId): Piece[] {
   return applyScenario(f, posture).map((p, i) => ({
     id: `opp-${i + 1}`,
     role: "OPP" as const,
-    label: `O${i + 1}`,
+    label: p.label, // their real position label — callouts read "their RCB", not "their O3"
     x: Math.round(100 - p.x),
     y: Math.round(100 - p.y),
   }));
@@ -153,6 +153,14 @@ export function FormationExplorer() {
   }, [playing, wave, scenario, formation, scenarioPieces]);
 
   const meters = shapeMeters(scenarioPieces);
+  // The matchup layer: instructions + recommended ball route against the
+  // placed opposition, recomputed on every drag of either color.
+  const [showTips, setShowTips] = useState(true);
+  const matchup = useMemo(
+    () => matchupCallouts(scenarioPieces, oppPieces, scenario),
+    [scenarioPieces, oppPieces, scenario],
+  );
+  const tipsOn = showTips && oppPieces.length > 0 && scenario !== "base";
   const scenarioDef = SCENARIOS.find((s) => s.id === scenario)!;
   const extraNote = formation.notes?.[scenario];
   const oppPayload = oppPieces.map(({ label, x, y }) => ({ label, x: Math.round(x), y: Math.round(y) }));
@@ -175,7 +183,10 @@ export function FormationExplorer() {
     setGhosts(null);
     setHotPiece(null);
     const target = applyScenario(formation, scenario);
-    const path = resolveBallPath(target, choreo);
+    // with an opponent on the board, the ball plays the MATCHUP route (through
+    // the free man / into the trap) instead of the generic scenario story
+    const vsOpp = matchupCallouts(target, oppPieces, scenario).ballPath;
+    const path = oppPieces.length && vsOpp.length >= 2 ? vsOpp : resolveBallPath(target, choreo);
     setPlaying(true);
 
     const runCycle = () => {
@@ -330,9 +341,24 @@ export function FormationExplorer() {
   // Ask the engine a direct question about the current board + opposition.
   async function ask() {
     if (!question.trim() || asking) return;
-    setAsking(true);
     const q = question.trim();
     setQuestion("");
+    await askQuestion(q);
+  }
+
+  // One-tap AI read of the whole matchup — composes the question the coach
+  // is really asking when both formations are on the board.
+  async function readMatchup() {
+    const oppF = FORMATIONS.find((x) => x.id === oppFormationId);
+    const posture = OPP_POSTURES.find((x) => x.id === oppPosture);
+    await askQuestion(
+      `We are a ${formation.name} in ${scenarioDef.name} against their ${oppF ? oppF.name : "shape as placed"}${posture && posture.id !== "base" ? ` (${posture.label.slice(posture.label.indexOf(" ") + 1)})` : ""}. Give me the game plan for THIS matchup: who presses/marks whom, where their free man is, the space we attack, and the ONE instruction to shout first.`,
+    );
+  }
+
+  async function askQuestion(q: string) {
+    if (asking) return;
+    setAsking(true);
     const readId = Date.now() + Math.random();
     setReads((r) => [{ id: readId, moveLabel: `💬 ${q.slice(0, 60)}`, quick: { gains: [], risks: [] }, verdict: null, thinking: true }, ...r].slice(0, 3));
     try {
@@ -469,17 +495,33 @@ export function FormationExplorer() {
         <div className="explorer-grid">
           <div>
             <div className="card" style={{ padding: 10 }}>
-              <TacticsBoard pieces={pieces} ghosts={playing ? null : ghosts} onMove={onMove} opponents={oppPieces} onMoveOpp={moveOpp} onRemoveOpp={removeOpp} highlight={playing ? null : hotPiece} ball={ball} />
+              <TacticsBoard
+                pieces={pieces}
+                ghosts={playing ? null : ghosts}
+                onMove={onMove}
+                opponents={oppPieces}
+                onMoveOpp={moveOpp}
+                onRemoveOpp={removeOpp}
+                highlight={playing ? null : hotPiece}
+                ball={ball}
+                callouts={tipsOn && !playing ? matchup.callouts : undefined}
+                suggestedPath={tipsOn ? matchup.ballPath : undefined}
+              />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 }}>
                 <div className="meters">
                   <Meter label="Compact" value={meters.compact} color="var(--turquoise)" />
                   <Meter label="Width" value={meters.width} color="var(--accent)" />
                   <Meter label="Cover" value={meters.cover} color="var(--gold)" />
                 </div>
-                <span style={{ display: "inline-flex", gap: 8 }}>
+                <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
+                  {oppPieces.length > 0 && scenario !== "base" && (
+                    <button className={`tab ${showTips ? "active" : ""}`} style={{ fontSize: 12 }} onClick={() => setShowTips(!showTips)} title="Numbered coaching callouts + the recommended ball route against this opponent">
+                      💡 Matchup tips
+                    </button>
+                  )}
                   {scenario !== "base" && (
                     <button className="btn" style={{ fontSize: 12 }} onClick={play}>
-                      {playing ? "◼ Stop" : "▶ Play the movement"}
+                      {playing ? "◼ Stop" : oppPieces.length ? "▶ Play it vs them" : "▶ Play the movement"}
                     </button>
                   )}
                   <button className="btn ghost" style={{ fontSize: 12 }} onClick={() => resetBoard()}>↺ Reset shape</button>
@@ -489,6 +531,31 @@ export function FormationExplorer() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* the matchup plan — numbered to match the badges on the pitch */}
+            {tipsOn && matchup.callouts.length > 0 && (
+              <div className="card fade-in" style={{ borderTop: "3px solid #4cc9f0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>🎯 The matchup plan</h3>
+                  <button className="btn" style={{ fontSize: 11.5, padding: "5px 10px" }} disabled={asking} onClick={() => void readMatchup()} title="One engine read of the whole matchup — who marks whom, their free man, our space, the first instruction to shout">
+                    {asking ? "reading…" : "🧠 Engine read"}
+                  </button>
+                </div>
+                <p className="muted small" style={{ margin: "4px 0 8px" }}>
+                  Numbered on the pitch. The dashed line is where the ball should go — hit <b>▶ Play it vs them</b> to watch it.
+                </p>
+                {matchup.callouts.map((c) => (
+                  <div key={c.n} className="small" style={{ display: "flex", gap: 8, marginBottom: 6, lineHeight: 1.45 }}>
+                    <span style={{
+                      flexShrink: 0, width: 18, height: 18, borderRadius: 9, textAlign: "center", fontWeight: 900, fontSize: 12,
+                      background: c.kind === "press" ? "#ffd166" : c.kind === "free" ? "#2dd47a" : c.kind === "exploit" ? "#4cc9f0" : "#ff5d5d",
+                      color: "#10131f",
+                    }}>{c.n}</span>
+                    <span>{c.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* engine reads — the chess annotations */}
             {reads.map((r) => (
               <div key={r.id} className="card engine-read fade-in">

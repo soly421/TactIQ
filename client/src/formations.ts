@@ -599,6 +599,156 @@ export function resolveBallPath(pieces: Piece[], c: Choreo): { x: number; y: num
 }
 
 // ---------------------------------------------------------------------------
+// The matchup engine: OUR scenario picture vs THEIR placed shape, resolved
+// into concrete on-field instructions — who presses whom, who's free, where
+// the space is — plus the recommended ball route against this exact opponent.
+// Deterministic and instant; the AI engine layers judgment on top of it.
+// ---------------------------------------------------------------------------
+
+export interface MatchupCallout {
+  n: number; // badge number, matches the legend
+  kind: "press" | "free" | "exploit" | "danger";
+  x: number; // anchor on the pitch (badge position)
+  y: number;
+  from?: { x: number; y: number }; // our player's spot — draws the assignment arrow
+  text: string; // full legend line
+}
+
+export interface Matchup {
+  callouts: MatchupCallout[];
+  ballPath: { x: number; y: number }[]; // where the ball should go vs THIS opponent
+}
+
+const DEFENSIVE: ScenarioId[] = ["highpress", "midblock", "lowblock", "defTransition", "defCross"];
+
+const nearestTo = (t: { x: number; y: number }) => (a: Piece, b: Piece) =>
+  Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y);
+
+export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: ScenarioId): Matchup {
+  const callouts: MatchupCallout[] = [];
+  const ballPath: { x: number; y: number }[] = [];
+  if (!opps.length || scenario === "base") return { callouts, ballPath };
+  const field = ours.filter((p) => p.role !== "GK");
+  const oppsByY = [...opps].sort((a, b) => a.y - b.y);
+  const push = (c: Omit<MatchupCallout, "n">) => { if (callouts.length < 5) callouts.push({ n: callouts.length + 1, ...c }); };
+
+  if (DEFENSIVE.includes(scenario)) {
+    // We defend; they build from near THEIR goal (small y, mirrored shapes
+    // put their GK at the top of our view).
+    const theirGK = oppsByY[0];
+    const buildTargets = oppsByY.filter((o) => o !== theirGK && o.y <= 46).slice(0, 4);
+    const assigned = new Set<string>();
+    const jobs: { our: Piece; target: Piece }[] = [];
+    for (const target of buildTargets) {
+      const presser = field
+        .filter((p) => !assigned.has(p.id) && p.y <= Math.max(52, target.y + 22))
+        .sort(nearestTo(target))[0];
+      if (!presser) continue;
+      assigned.add(presser.id);
+      jobs.push({ our: presser, target });
+    }
+    // free man first — the thing that breaks a press deserves the loudest badge
+    for (const o of buildTargets) {
+      const cover = Math.min(...ours.map((p) => Math.hypot(p.x - o.x, p.y - o.y)));
+      if (cover > 14) {
+        const nearest = field.sort(nearestTo(o))[0];
+        push({ kind: "danger", x: o.x, y: o.y, from: nearest ? { x: nearest.x, y: nearest.y } : undefined, text: `Their ${o.label} is FREE — ${nearest?.label ?? "nearest player"} must shift across before the ball moves` });
+        break;
+      }
+    }
+    for (const j of jobs.slice(0, 3)) {
+      push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} presses their ${j.target.label} — arrive as the ball travels, show them the touchline` });
+    }
+    // runner in behind while we squeeze
+    const runner = oppsByY[oppsByY.length - 1];
+    if (runner && runner.y > 55) {
+      const marker = ours.filter((p) => ["CB", "FB", "GK"].includes(p.role)).sort(nearestTo(runner))[0];
+      if (marker && Math.hypot(marker.x - runner.x, marker.y - runner.y) > 13) {
+        push({ kind: "danger", x: runner.x, y: runner.y, from: { x: marker.x, y: marker.y }, text: `Their ${runner.label} is loose behind the press — ${marker.label} stays goal-side, keeper ready to sweep` });
+      }
+    }
+    // their whole shape is advanced (e.g. you set a low block against THEIR
+    // press — they'd only look like this with the ball): mark the threats
+    if (jobs.length === 0) {
+      const threats = [...opps].sort((a, b) => b.y - a.y).slice(0, 2);
+      const markers = new Set<string>();
+      for (const t of threats) {
+        const marker = field.filter((p) => !markers.has(p.id)).sort(nearestTo(t))[0];
+        if (!marker) continue;
+        markers.add(marker.id);
+        push({ kind: "press", x: t.x, y: t.y, from: { x: marker.x, y: marker.y }, text: `${marker.label} takes their ${t.label} — touch-tight, goal-side, no turning` });
+        jobs.push({ our: marker, target: t });
+      }
+    }
+    // ball story: their build-up gets forced into the press trap, we win it and break
+    const trap = jobs[0]?.target ?? buildTargets[0];
+    if (trap) {
+      const start = theirGK && theirGK !== trap ? theirGK : [...opps].sort((a, b) => a.y - b.y)[0];
+      const outlet = field.filter((p) => !assigned.has(p.id)).sort((a, b) => a.y - b.y)[0];
+      if (start && start !== trap) ballPath.push({ x: start.x, y: start.y });
+      ballPath.push({ x: trap.x, y: trap.y }, { x: clamp(trap.x + 4), y: clamp(trap.y + 7) });
+      if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
+      ballPath.push({ x: 50, y: 8 });
+    }
+  } else {
+    // We attack; their block sits between us and their goal (small y).
+    const theirGK = oppsByY[0];
+    const line = oppsByY.slice(1, 6).filter((o) => o.y <= oppsByY[1].y + 14).slice(0, 5);
+    // the free man: our most advanced player no red shirt can touch
+    const freeMen = field
+      .filter((p) => p.y > 18 && p.y < 72 && Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 12)
+      .sort((a, b) => a.y - b.y);
+    const freeMan = freeMen.find((p) => Math.abs(p.x - 50) < 28) ?? freeMen[0];
+    if (freeMan) {
+      push({ kind: "free", x: freeMan.x, y: freeMan.y, text: `${freeMan.label} is the free man — no red shirt within a pass; play through him, receive on the half-turn` });
+    }
+    // the channel: widest gap across their last line (touchline to touchline)
+    let gap: { x: number; y: number } | null = null;
+    if (line.length >= 2) {
+      const xs = [8, ...line.map((o) => o.x).sort((a, b) => a - b), 92];
+      let bestW = 0, bestX = 50;
+      for (let i = 1; i < xs.length; i++) {
+        const w = xs[i] - xs[i - 1];
+        if (w > bestW) { bestW = w; bestX = (xs[i] + xs[i - 1]) / 2; }
+      }
+      const lineY = line.reduce((s, o) => s + o.y, 0) / line.length;
+      if (bestW >= 18) {
+        gap = { x: clamp(bestX, 10, 90), y: clamp(lineY - 9, 6) };
+        const runnerUp = field.filter((p) => ["ST", "W", "AM"].includes(p.role)).sort(nearestTo(gap))[0];
+        push({ kind: "exploit", x: gap.x, y: gap.y, from: runnerUp ? { x: runnerUp.x, y: runnerUp.y } : undefined, text: `${Math.round(bestW)}-wide channel in their last line — ${runnerUp ? `${runnerUp.label} attacks it` : "attack it"} with a run in behind` });
+      }
+    }
+    // overloaded player warning: one of ours with two red shirts on him
+    for (const p of field) {
+      const close = opps.filter((o) => Math.hypot(o.x - p.x, o.y - p.y) < 9).length;
+      if (close >= 2) {
+        push({ kind: "danger", x: p.x, y: p.y, text: `${p.label} has ${close} red shirts on him — don't force it there, switch away from the crowd` });
+        break;
+      }
+    }
+    // everyone marked and no channel: the answer is circulation to the
+    // lighter flank — say so, and route the ball that way
+    if (callouts.length === 0) {
+      const leftLoad = opps.filter((o) => o.x < 50).length;
+      const lightX = leftLoad > opps.length / 2 ? 78 : 22;
+      const wide = field.filter((p) => (lightX > 50 ? p.x > 55 : p.x < 45)).sort((a, b) => a.y - b.y)[0];
+      push({ kind: "exploit", x: wide ? wide.x : lightX, y: wide ? wide.y : 40, text: `Everyone central is marked — they're loaded ${leftLoad > opps.length / 2 ? "left" : "right"}. Two-touch circulation and switch to ${wide ? wide.label : "the far side"} before their block shifts` });
+    }
+    // ball story: from the back, through the free man, into the channel
+    const starter = ours.find((p) => p.role === "GK") ?? [...ours].sort((a, b) => b.y - a.y)[0];
+    if (starter) {
+      ballPath.push({ x: starter.x, y: starter.y });
+      const back = field.filter((p) => ["CB", "FB", "DM"].includes(p.role) && p.id !== freeMan?.id && Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 10).sort((a, b) => b.y - a.y)[0];
+      if (back) ballPath.push({ x: back.x, y: back.y });
+      if (freeMan) ballPath.push({ x: freeMan.x, y: freeMan.y });
+      ballPath.push(gap ?? { x: 50, y: 12 });
+      if (gap) ballPath.push({ x: 50, y: 6 });
+    }
+  }
+  return { callouts, ballPath };
+}
+
+// ---------------------------------------------------------------------------
 // Instant local pre-read: the "quick eval" chips that appear the moment a
 // piece is dropped, while the AI engine computes the deep line.
 // ---------------------------------------------------------------------------

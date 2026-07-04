@@ -16,8 +16,8 @@ import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry
   activeTeamId, addFeedback, clubThemeFor, createTeam, deleteTeam, getUserClub, feedbackCount, incrementUsage, kvGet, kvSet, listTeams, saveLibraryPlan, saveSquad, setActiveTeam, setPlanTier, tokensToday, upcomingEvents, xpAtStartOfToday,
   type CustomAdvisor, type SquadProfile,
 } from "./store.js";
-import { award, BADGES, FREE_DAILY_MESSAGES, levelFor, streakFreezeAvailable } from "./gamification.js";
-import { communitySnapshot, weekStart } from "./community.js";
+import { award, BADGES, FREE_DAILY_MESSAGES, levelFor } from "./gamification.js";
+import { weekStart } from "./community.js";
 import { castVote, debateState } from "./debate.js";
 import { questState } from "./quests.js";
 import { engineSummary, hasAnyProvider, tierFor, type Plan } from "./providers.js";
@@ -1016,24 +1016,6 @@ ${question
     console.error(err);
     res.status(500).json({ error: "Engine read failed — try the next move." });
   }
-});
-
-// ---- Community: weekly league, club cup, recap ----
-api.get("/community", (req, res) => {
-  const userId = uid(req);
-  const snap = communitySnapshot(userId);
-  const p = getProgress(userId);
-  res.json({
-    ...snap,
-    streak: { current: p.streak, freezeAvailable: streakFreezeAvailable(userId) },
-    recap: {
-      ...snap.recap,
-      sessions: p.counts.session ?? 0,
-      matchdays: p.counts.matchday ?? 0,
-      chats: p.counts.chat ?? 0,
-      ratings: p.counts.rate ?? 0,
-    },
-  });
 });
 
 // ---- The Touchline Debate: weekly dilemma, tap to vote, verdict Saturday ----

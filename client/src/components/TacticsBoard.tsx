@@ -1,11 +1,14 @@
 import { useRef, useState } from "react";
-import type { Piece } from "../formations";
+import type { MatchupCallout, Piece } from "../formations";
 
 // The interactive pitch: players glide between scenarios (CSS transform
 // transitions), ghost trails + arrows show what moved, and every piece is
 // draggable — pointer coords map back into the 100x100 tactical grid.
 // Opposition markers are a second draggable layer (red) so the coach can
 // lay out exactly what they're facing; double-tap removes one.
+// With an opponent placed, the matchup layer draws numbered coaching
+// callouts (who presses whom, who's free, where the space is) and the
+// recommended ball route as an animated dashed line.
 
 interface Props {
   pieces: Piece[];
@@ -16,13 +19,22 @@ interface Props {
   onRemoveOpp?: (id: string) => void;
   highlight?: string | null; // piece id being analyzed
   ball?: { x: number; y: number } | null; // animated ball during scenario playback
+  callouts?: MatchupCallout[]; // numbered matchup instructions, anchored on the pitch
+  suggestedPath?: { x: number; y: number }[]; // where the ball should go vs this opponent
 }
+
+const CALLOUT_COLOR: Record<MatchupCallout["kind"], string> = {
+  press: "#ffd166", // gold — the job
+  free: "#2dd47a", // green — the opportunity
+  exploit: "#4cc9f0", // cyan — the space
+  danger: "#ff5d5d", // red — the warning
+};
 
 const ROLE_COLOR: Record<string, string> = {
   GK: "#e8b64c", CB: "#7ea8ff", FB: "#7ea8ff", DM: "#2dd4bf", CM: "#2dd4bf", AM: "#c084fc", W: "#ff7a1a", ST: "#ff7a1a",
 };
 
-export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onRemoveOpp, highlight, ball }: Props) {
+export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onRemoveOpp, highlight, ball, callouts, suggestedPath }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; side: "own" | "opp"; fromX: number; fromY: number } | null>(null);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -153,6 +165,52 @@ export function TacticsBoard({ pieces, ghosts, onMove, opponents, onMoveOpp, onR
           </g>
         );
       })}
+
+      {/* recommended ball route vs this opponent — marching dashes, arrowheads */}
+      {suggestedPath && suggestedPath.length >= 2 && (
+        <g style={{ pointerEvents: "none" }}>
+          {suggestedPath.slice(1).map((wp, i) => {
+            const a = suggestedPath[i];
+            return (
+              <line
+                key={`sp-${i}`}
+                x1={a.x} y1={a.y} x2={wp.x} y2={wp.y}
+                stroke="#4cc9f0" strokeWidth="0.7" strokeDasharray="2.2 1.7" opacity="0.9"
+                markerEnd="url(#tb-ball-arrow)"
+              >
+                <animate attributeName="stroke-dashoffset" from="0" to="-7.8" dur="1.1s" repeatCount="indefinite" />
+              </line>
+            );
+          })}
+          <circle cx={suggestedPath[0].x} cy={suggestedPath[0].y} r="1.4" fill="#4cc9f0" opacity="0.9" />
+        </g>
+      )}
+
+      {/* matchup callouts — numbered coaching instructions anchored on the pitch */}
+      {callouts?.map((c) => {
+        const color = CALLOUT_COLOR[c.kind];
+        return (
+          <g key={`co-${c.n}`} style={{ pointerEvents: "none" }}>
+            {c.from && (
+              <line x1={c.from.x} y1={c.from.y} x2={c.x} y2={c.y} stroke={color} strokeWidth="0.55" strokeDasharray="1.4 1.2" opacity="0.85" markerEnd="url(#tb-arrow)" />
+            )}
+            <circle cx={c.x} cy={c.y} r="4.6" fill="none" stroke={color} strokeWidth="0.55" opacity="0.85">
+              <animate attributeName="r" values="4;5.4;4" dur="1.8s" repeatCount="indefinite" />
+            </circle>
+            <g transform={`translate(${Math.min(92, Math.max(8, c.x))}, ${c.y < 12 ? c.y + 7.2 : c.y - 6.4})`}>
+              <circle r="2.5" fill={color} stroke="rgba(0,0,0,0.55)" strokeWidth="0.4" />
+              <text y="1" textAnchor="middle" fontSize="2.6" fontWeight="900" fill="#10131f">{c.n}</text>
+            </g>
+            <title>{c.text}</title>
+          </g>
+        );
+      })}
+
+      <defs>
+        <marker id="tb-ball-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5.5" markerHeight="5.5" orient="auto">
+          <path d="M0,0 L6,3 L0,6 z" fill="#4cc9f0" />
+        </marker>
+      </defs>
 
       {/* the ball — on top of everyone, gliding between choreography waypoints */}
       {ball && (

@@ -83,6 +83,15 @@ for (const sc of ["Base Shape", "Build-Up", "High Press", "Mid Block", "Low Bloc
   else ok(`scenario: ${sc}`, false, "button missing");
 }
 ok("opposition picker present", await has("text=Opposition"));
+// matchup layer: place an opponent formation, expect callouts + ball route
+await page.click("button:has-text('High Press')");
+await page.waitForTimeout(600);
+await page.selectOption("select", { index: 1 });
+await page.waitForTimeout(1000);
+ok("matchup plan card", await has("text=The matchup plan"));
+ok("suggested ball route", (await page.locator("svg line[stroke='#4cc9f0']").count()) >= 2);
+await page.selectOption("select", { index: 0 });
+await page.waitForTimeout(400);
 // freehand mode
 const freehand = page.locator("button:has-text('Freehand sketch')");
 if (await freehand.count()) { await freehand.click(); await page.waitForTimeout(700); ok("freehand board renders", await has("svg")); await page.click("button:has-text('Formations & scenarios')"); }
@@ -103,18 +112,10 @@ ok("team page shows profile", await has('input') || await has("text=Audit FC"));
 ok("team page schedule section", await has("text=/schedule|calendar/i"));
 ok("danger zone / delete account present", await has("text=Delete account"));
 
-// ---------- COMMUNITY ----------
-await page.click("nav >> text=Community");
+// ---------- CLUB ----------
+await page.click("nav >> text=Club");
 await page.waitForTimeout(900);
-ok("community stat strip", await has("text=XP this week"));
-ok("league card", await has("text=/License|Grassroots/"));
-ok("promotion race line", await has("text=/promotion|cushion|drop zone/i"));
-ok("quests in community", await has("text=Today's Quests"));
-ok("trophy case", await has("text=Trophy Case"));
-// club toggle
-await page.click("button:has-text('My Club')");
-await page.waitForTimeout(700);
-ok("club toggle renders", await has("text=/club|join|create/i"));
+ok("club tab renders", await has("text=/club|join|create/i"));
 
 // ---------- PRICING (via upgrade chip after switching to free? just open tab event) ----------
 await page.evaluate(() => window.dispatchEvent(new Event("tactiq:pricing")));

@@ -10,7 +10,7 @@ import { Advisors } from "./pages/Advisors";
 import { Studio } from "./pages/Studio";
 import { MatchDay } from "./pages/MatchDay";
 import { Team } from "./pages/Team";
-import { Community } from "./pages/Community";
+import { Club } from "./pages/Club";
 import { TacticsPage } from "./pages/TacticsPage";
 import { Privacy } from "./pages/Privacy";
 import { Pricing } from "./pages/Pricing";
@@ -25,7 +25,7 @@ const NAV = [
   { id: "tactics", label: "Tactics Board", emoji: "♟️" },
   { id: "matchday", label: "Match Day", emoji: "📣" },
   { id: "team", label: "My Team", emoji: "🛡️" },
-  { id: "community", label: "Community", emoji: "🏆" },
+  { id: "club", label: "Club", emoji: "🏛️" },
 ];
 
 function TopBar() {
@@ -172,7 +172,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {tab === "tactics" && <TacticsPage />}
         {tab === "matchday" && <MatchDay />}
         {tab === "team" && <Team />}
-        {tab === "community" && <Community user={user} />}
+        {tab === "club" && <Club user={user} />}
         {tab === "privacy" && <Privacy />}
         {tab === "pricing" && <Pricing go={setTab} />}
         {tab === "admin" && <Admin />}
