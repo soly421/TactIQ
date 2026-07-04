@@ -600,9 +600,11 @@ export function resolveBallPath(pieces: Piece[], c: Choreo): { x: number; y: num
 
 // ---------------------------------------------------------------------------
 // The matchup engine: OUR scenario picture vs THEIR placed shape, resolved
-// into concrete on-field instructions — who presses whom, who's free, where
-// the space is — plus the recommended ball route against this exact opponent.
-// Deterministic and instant; the AI engine layers judgment on top of it.
+// into the instructions a licensed coach would actually give — per-scenario
+// doctrine, not nearest-neighbor guesses. Role discipline is enforced: in a
+// high press the FRONT presses their back line, mids lock their pivots, and
+// the back line NEVER jumps out of shape. Blocks screen instead of pressing.
+// Deterministic and instant; the AI engine layers judgment on top.
 // ---------------------------------------------------------------------------
 
 export interface MatchupCallout {
@@ -619,132 +621,461 @@ export interface Matchup {
   ballPath: { x: number; y: number }[]; // where the ball should go vs THIS opponent
 }
 
-const DEFENSIVE: ScenarioId[] = ["highpress", "midblock", "lowblock", "defTransition", "defCross"];
+// Their pieces carry no roles (lone markers never do), so their lines come
+// from y-clustering: their goal is y=0, so ascending y = GK, backs, mids,
+// front. A gap of >9 grid units separates lines — matches every mirrored
+// shape and degrades gracefully for hand-placed markers.
+interface OppLines {
+  gk: Piece | null;
+  back: Piece[]; // their deepest outfield line (build-up CBs/FBs)
+  mid: Piece[]; // their pivots / midfield
+  front: Piece[]; // their forwards (nearest OUR goal)
+  all: Piece[];
+}
 
-const nearestTo = (t: { x: number; y: number }) => (a: Piece, b: Piece) =>
-  Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y);
+function classifyOpp(opps: Piece[]): OppLines {
+  const sorted = [...opps].sort((a, b) => a.y - b.y);
+  const groups: Piece[][] = [];
+  for (const o of sorted) {
+    const g = groups[groups.length - 1];
+    if (g && o.y - g[g.length - 1].y <= 9) g.push(o);
+    else groups.push([o]);
+  }
+  let gk: Piece | null = null;
+  if (groups.length > 1 && groups[0].length === 1 && (groups[0][0].y < 20 || groups[1][0].y - groups[0][0].y >= 12)) {
+    gk = groups.shift()![0];
+  }
+  const back = groups[0] ?? [];
+  const front = groups.length > 1 ? groups[groups.length - 1] : [];
+  const mid = groups.slice(1, Math.max(1, groups.length - 1)).flat();
+  return { gk, back, mid, front, all: opps };
+}
+
+// Our lines come from authored roles — the scenario pictures set them.
+const OUR_FRONT: Role[] = ["ST", "W", "AM"];
+const OUR_MID: Role[] = ["CM", "DM"];
+const OUR_BACK: Role[] = ["CB", "FB"];
+
+const wordFor = (o: Piece) => (o.label.startsWith("O") && /\d/.test(o.label) ? `#${o.label.slice(1)}` : o.label);
+
+// Greedy role-disciplined assignment: each target gets the nearest UNUSED
+// player from the allowed pool, and only if the travel is coachable (<=dist).
+function assignJobs(
+  targets: Piece[],
+  pool: Piece[],
+  used: Set<string>,
+  maxDist: number,
+): { our: Piece; target: Piece }[] {
+  const jobs: { our: Piece; target: Piece }[] = [];
+  for (const target of targets) {
+    const our = pool
+      .filter((p) => !used.has(p.id) && Math.hypot(p.x - target.x, p.y - target.y) <= maxDist)
+      .sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y))[0];
+    if (!our) continue;
+    used.add(our.id);
+    jobs.push({ our, target });
+  }
+  return jobs;
+}
+
+const isWide = (p: Piece) => p.x < 28 || p.x > 72;
+const byCentral = (a: Piece, b: Piece) => Math.abs(a.x - 50) - Math.abs(b.x - 50);
+const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: ScenarioId): Matchup {
   const callouts: MatchupCallout[] = [];
   const ballPath: { x: number; y: number }[] = [];
   if (!opps.length || scenario === "base") return { callouts, ballPath };
-  const field = ours.filter((p) => p.role !== "GK");
-  const oppsByY = [...opps].sort((a, b) => a.y - b.y);
-  const push = (c: Omit<MatchupCallout, "n">) => { if (callouts.length < 5) callouts.push({ n: callouts.length + 1, ...c }); };
 
-  if (DEFENSIVE.includes(scenario)) {
-    // We defend; they build from near THEIR goal (small y, mirrored shapes
-    // put their GK at the top of our view).
-    const theirGK = oppsByY[0];
-    const buildTargets = oppsByY.filter((o) => o !== theirGK && o.y <= 46).slice(0, 4);
-    const assigned = new Set<string>();
-    const jobs: { our: Piece; target: Piece }[] = [];
-    for (const target of buildTargets) {
-      const presser = field
-        .filter((p) => !assigned.has(p.id) && p.y <= Math.max(52, target.y + 22))
-        .sort(nearestTo(target))[0];
-      if (!presser) continue;
-      assigned.add(presser.id);
-      jobs.push({ our: presser, target });
+  const push = (c: Omit<MatchupCallout, "n">) => {
+    if (callouts.length < 5) callouts.push({ n: callouts.length + 1, x: clamp(c.x, 4, 96), y: clamp(c.y, 4, 96), ...{ kind: c.kind, from: c.from, text: c.text } });
+  };
+  const L = classifyOpp(opps);
+  const field = ours.filter((p) => p.role !== "GK");
+  const ourGK = ours.find((p) => p.role === "GK") ?? null;
+  const front = field.filter((p) => OUR_FRONT.includes(p.role));
+  const mids = field.filter((p) => OUR_MID.includes(p.role));
+  const backs = field.filter((p) => OUR_BACK.includes(p.role));
+  const used = new Set<string>();
+
+  // Shared warning: their most advanced runner loose against our last line.
+  const runnerWarning = () => {
+    const runner = [...L.front, ...L.mid].sort((a, b) => b.y - a.y)[0];
+    if (!runner || runner.y < 52) return;
+    const marker = [...backs, ...(ourGK ? [ourGK] : [])].sort((a, b) => dist(a, runner) - dist(b, runner))[0];
+    if (marker && dist(marker, runner) > 13) {
+      push({ kind: "danger", x: runner.x, y: runner.y, from: { x: marker.x, y: marker.y }, text: `Their ${wordFor(runner)} is loose behind us — ${marker.label} goal-side NOW; one ball over the top beats the whole press` });
     }
-    // free man first — the thing that breaks a press deserves the loudest badge
-    for (const o of buildTargets) {
-      const cover = Math.min(...ours.map((p) => Math.hypot(p.x - o.x, p.y - o.y)));
+  };
+
+  // Shared: their unmarked build-up player (the press-breaker).
+  const freeOppWarning = (targets: Piece[]) => {
+    for (const o of targets) {
+      const cover = Math.min(...ours.map((p) => dist(p, o)));
       if (cover > 14) {
-        const nearest = field.sort(nearestTo(o))[0];
-        push({ kind: "danger", x: o.x, y: o.y, from: nearest ? { x: nearest.x, y: nearest.y } : undefined, text: `Their ${o.label} is FREE — ${nearest?.label ?? "nearest player"} must shift across before the ball moves` });
-        break;
+        const nearest = [...front, ...mids].sort((a, b) => dist(a, o) - dist(b, o))[0];
+        const coachable = nearest && dist(nearest, o) <= 40;
+        push({
+          kind: "danger", x: o.x, y: o.y,
+          from: coachable ? { x: nearest.x, y: nearest.y } : undefined,
+          text: coachable
+            ? `Their ${wordFor(o)} is FREE — every pass finds him until ${nearest.label} shifts across. Fix it before the restart`
+            : `Their ${wordFor(o)} is FREE on the far side — one player can't fix it: the WHOLE press slides across together or you don't press at all`,
+        });
+        return;
       }
     }
-    for (const j of jobs.slice(0, 3)) {
-      push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} presses their ${j.target.label} — arrive as the ball travels, show them the touchline` });
-    }
-    // runner in behind while we squeeze
-    const runner = oppsByY[oppsByY.length - 1];
-    if (runner && runner.y > 55) {
-      const marker = ours.filter((p) => ["CB", "FB", "GK"].includes(p.role)).sort(nearestTo(runner))[0];
-      if (marker && Math.hypot(marker.x - runner.x, marker.y - runner.y) > 13) {
-        push({ kind: "danger", x: runner.x, y: runner.y, from: { x: marker.x, y: marker.y }, text: `Their ${runner.label} is loose behind the press — ${marker.label} stays goal-side, keeper ready to sweep` });
+  };
+
+  switch (scenario) {
+    // ── HIGH PRESS: front presses their back line (curved runs, touchline
+    // trap), mids lock their pivots man-for-man, back line squeezes but
+    // NEVER jumps. Doctrine shared by every pressing school.
+    case "highpress": {
+      const wideBacks = L.back.filter(isWide);
+      const centerBacks = L.back.filter((o) => !isWide(o)).sort(byCentral);
+      // strikers/central forwards take their CBs
+      const cbJobs = assignJobs(centerBacks.slice(0, 2), [...front].sort(byCentral), used, 48);
+      // wingers jump their fullbacks — the touchline trap
+      const wideFront = front.filter((p) => !used.has(p.id) && (isWide(p) || p.role === "W"));
+      const fbJobs = assignJobs(wideBacks.slice(0, 2), wideFront.length ? wideFront : front.filter((p) => !used.has(p.id)), used, 48);
+      // nearest mid locks their most central pivot
+      const pivot = [...L.mid].sort(byCentral)[0];
+      const pivotJob = pivot ? assignJobs([pivot], mids, used, 42) : [];
+      freeOppWarning([...centerBacks, ...wideBacks, ...(pivot ? [pivot] : [])]);
+      for (const j of cbJobs.slice(0, 2)) {
+        push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} presses their ${wordFor(j.target)} with a curved run — show him ONE way and cover-shadow the pivot behind you` });
       }
-    }
-    // their whole shape is advanced (e.g. you set a low block against THEIR
-    // press — they'd only look like this with the ball): mark the threats
-    if (jobs.length === 0) {
-      const threats = [...opps].sort((a, b) => b.y - a.y).slice(0, 2);
-      const markers = new Set<string>();
-      for (const t of threats) {
-        const marker = field.filter((p) => !markers.has(p.id)).sort(nearestTo(t))[0];
-        if (!marker) continue;
-        markers.add(marker.id);
-        push({ kind: "press", x: t.x, y: t.y, from: { x: marker.x, y: marker.y }, text: `${marker.label} takes their ${t.label} — touch-tight, goal-side, no turning` });
-        jobs.push({ our: marker, target: t });
+      for (const j of fbJobs.slice(0, 1)) {
+        push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} jumps their ${wordFor(j.target)} the moment the pass travels — the touchline is your extra defender, trap him there` });
       }
+      for (const j of pivotJob) {
+        push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} locks their ${wordFor(j.target)} touch-tight — the bounce pass through the middle is how presses die` });
+      }
+      if (cbJobs.length + fbJobs.length + pivotJob.length === 0) {
+        // both teams are set up to press — a pressing duel. The instruction
+        // survives: the front two hunt their deepest ball-players on the
+        // turnover; no arrows, the distances close the moment the ball moves.
+        const deepest = [...L.back, ...(L.gk ? [L.gk] : [])].sort((a, b) => a.y - b.y).slice(0, 2);
+        const hunters = [...front].sort(byCentral).slice(0, 2);
+        deepest.slice(0, hunters.length).forEach((t, i) => {
+          push({ kind: "press", x: t.x, y: t.y, text: `${hunters[i].label} presses their ${wordFor(t)} the second the ball turns over — they're pressing too, so this is a duel: first team to the ball wins the game` });
+        });
+      }
+      runnerWarning();
+      // route: keeper → pressed CB → forced to the trapped FB → we win → break
+      const trap = fbJobs[0]?.target ?? cbJobs[0]?.target ?? L.back[0];
+      if (trap) {
+        if (L.gk) ballPath.push({ x: L.gk.x, y: L.gk.y });
+        const via = cbJobs[0]?.target;
+        if (via && via !== trap) ballPath.push({ x: via.x, y: via.y });
+        ballPath.push({ x: trap.x, y: trap.y }, { x: clamp(trap.x), y: clamp(trap.y + 8) });
+        const breaker = front.find((p) => !used.has(p.id)) ?? front[0];
+        if (breaker) ballPath.push({ x: breaker.x, y: breaker.y });
+        ballPath.push({ x: 50, y: 8 });
+      }
+      break;
     }
-    // ball story: their build-up gets forced into the press trap, we win it and break
-    const trap = jobs[0]?.target ?? buildTargets[0];
-    if (trap) {
-      const start = theirGK && theirGK !== trap ? theirGK : [...opps].sort((a, b) => a.y - b.y)[0];
-      const outlet = field.filter((p) => !assigned.has(p.id)).sort((a, b) => a.y - b.y)[0];
-      if (start && start !== trap) ballPath.push({ x: start.x, y: start.y });
-      ballPath.push({ x: trap.x, y: trap.y }, { x: clamp(trap.x + 4), y: clamp(trap.y + 7) });
+
+    // ── MID BLOCK: nobody chases their back line. The front SCREENS the
+    // pivot lanes, the block shifts on the wide pass, and the entry pass
+    // into midfield is the pressing trigger.
+    case "midblock": {
+      const pivot = [...L.mid].sort(byCentral)[0];
+      const screener = [...front].sort(byCentral)[0];
+      if (pivot && screener && dist(screener, pivot) <= 40) {
+        used.add(screener.id);
+        push({ kind: "press", x: pivot.x, y: pivot.y, from: { x: screener.x, y: screener.y }, text: `${screener.label} screens the lane into their ${wordFor(pivot)} — let their CBs have it, deny the middle, force play around the block` });
+      }
+      const wideBack = L.back.filter(isWide).sort((a, b) => b.x - a.x)[0] ?? L.back[0];
+      if (wideBack) {
+        const shifter = front.filter((p) => !used.has(p.id)).sort((a, b) => dist(a, wideBack) - dist(b, wideBack))[0];
+        if (shifter && dist(shifter, wideBack) <= 40) {
+          used.add(shifter.id);
+          push({ kind: "press", x: wideBack.x, y: wideBack.y, from: { x: shifter.x, y: shifter.y }, text: `The pass to their ${wordFor(wideBack)} is the shift trigger — ${shifter.label} angles out to show him down the line and the WHOLE block slides with the ball` });
+        }
+      }
+      const receiver = [...L.mid].sort((a, b) => b.y - a.y)[0];
+      if (receiver) {
+        const ambusher = mids.sort((a, b) => dist(a, receiver) - dist(b, receiver))[0];
+        if (ambusher && dist(ambusher, receiver) <= 40) {
+          push({ kind: "press", x: receiver.x, y: receiver.y, from: { x: ambusher.x, y: ambusher.y }, text: `The entry pass into their ${wordFor(receiver)} is the TRAP — ${ambusher.label} arrives on his first touch, from behind, ball side` });
+        }
+      }
+      // they're parked in their own half — there's nothing to screen yet
+      if (!callouts.some((c) => c.kind === "press")) {
+        const stepper = [...front].sort(byCentral)[0];
+        if (stepper) {
+          push({ kind: "free", x: stepper.x, y: clamp(stepper.y - 10), from: { x: stepper.x, y: stepper.y }, text: `They're camped in their own half — the block shifts up to halfway TOGETHER, ${stepper.label} sets the line; any ball over the top is the keeper's` });
+        }
+      }
+      runnerWarning();
+      const outlet = [...front].sort((a, b) => a.y - b.y)[0];
+      if (outlet && callouts.length < 5) {
+        push({ kind: "free", x: outlet.x, y: outlet.y, text: `${outlet.label} stays connected to the block — win it here and you're 40 yards from goal with him as the out-ball` });
+      }
+      // route: their circulation wide, entry pass, our trap, counter
+      if (wideBack && receiver) {
+        const start = L.back.sort(byCentral)[0];
+        if (start && start !== wideBack) ballPath.push({ x: start.x, y: start.y });
+        ballPath.push({ x: wideBack.x, y: wideBack.y }, { x: receiver.x, y: receiver.y });
+        if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
+        ballPath.push({ x: 50, y: 10 });
+      }
+      break;
+    }
+
+    // ── LOW BLOCK: engage the wide carrier, own the cutback zone, mark the
+    // box men goal-side, keep the outlet alive.
+    case "lowblock": {
+      // only players actually threatening our half get engaged — a low block
+      // never chases into the opponent's half
+      const advanced = opps.filter((o) => o.y > 48);
+      const carrier = advanced.filter(isWide).sort((a, b) => b.y - a.y)[0] ?? [...advanced].sort((a, b) => b.y - a.y)[0];
+      if (carrier) {
+        const engager = field.filter((p) => p.y > 50).sort((a, b) => dist(a, carrier) - dist(b, carrier))[0];
+        if (engager && dist(engager, carrier) <= 35) {
+          used.add(engager.id);
+          push({ kind: "press", x: carrier.x, y: carrier.y, from: { x: engager.x, y: engager.y }, text: `${engager.label} closes their ${wordFor(carrier)} — force him BACKWARD, never dive in; a beaten defender here is a shot` });
+        }
+      } else {
+        const organizer = backs.sort(byCentral)[0];
+        if (organizer) {
+          push({ kind: "free", x: organizer.x, y: clamp(organizer.y - 14), from: { x: organizer.x, y: organizer.y }, text: `Nobody is threatening our half — the block squeezes up to halfway TOGETHER, ${organizer.label} sets the line; defending your box against nobody just invites pressure` });
+        }
+      }
+      const boxMen = L.front.filter((o) => o.y > 60 && o.x > 28 && o.x < 72).slice(0, 2);
+      const markJobs = assignJobs(boxMen, backs, used, 25);
+      for (const j of markJobs.slice(0, 2)) {
+        push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} owns their ${wordFor(j.target)} in the box — goal-side, touch-tight, and ATTACK the first contact on any cross` });
+      }
+      const cutbackPool = [...mids.filter((p) => !used.has(p.id)), ...front.filter((p) => !used.has(p.id)), ...backs.filter((p) => !used.has(p.id))];
+      const cutbackOwner = cutbackPool.sort((a, b) => dist(a, { x: 50, y: 74 }) - dist(b, { x: 50, y: 74 }))[0];
+      if (cutbackOwner) {
+        push({ kind: "exploit", x: 50, y: 74, from: { x: cutbackOwner.x, y: cutbackOwner.y }, text: `${cutbackOwner.label} owns the cutback zone at the top of the box — it's the highest-value pass in youth soccer and it's HIS` });
+      }
+      const outlet = [...field].sort((a, b) => a.y - b.y)[0];
+      if (outlet && outlet.y < 55) {
+        push({ kind: "free", x: outlet.x, y: outlet.y, text: `${outlet.label} stays alive at halfway — every clearance targets him, chest or feet, never hopeful` });
+      }
+      if (carrier) {
+        ballPath.push({ x: carrier.x, y: carrier.y }, { x: clamp(carrier.x > 50 ? carrier.x - 20 : carrier.x + 20), y: 86 }, { x: 50, y: 80 });
+        if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
+      }
+      break;
+    }
+
+    // ── COUNTER-PRESS: nearest 2-3 hunt the loss point, the escape lane is
+    // cut FIRST, everyone else drops and narrows.
+    case "defTransition": {
+      const loss = { x: 50, y: 42 };
+      const hunters = field.filter((p) => dist(p, loss) < 14).slice(0, 3);
+      hunters.forEach((h) => used.add(h.id));
+      if (hunters[0]) {
+        push({ kind: "press", x: loss.x, y: loss.y, from: { x: hunters[0].x, y: hunters[0].y }, text: `Ball lost HERE — ${hunters.map((h) => h.label).join(" + ")} hunt for five seconds: curve the runs, trap the ball, don't slide` });
+      }
+      const escape = [...opps].sort((a, b) => dist(a, loss) - dist(b, loss))[0];
+      if (escape) {
+        const cutter = field.filter((p) => !used.has(p.id)).sort((a, b) => dist(a, escape) - dist(b, escape))[0] ?? hunters[1];
+        push({ kind: "danger", x: escape.x, y: escape.y, from: cutter ? { x: cutter.x, y: cutter.y } : undefined, text: `Their ${wordFor(escape)} is the escape lane — ${cutter?.label ?? "the second presser"} cuts HIM off first; kill the out-ball and the press wins` });
+      }
+      const deepest = [...backs].sort(byCentral)[0];
+      if (deepest) {
+        push({ kind: "free", x: deepest.x, y: deepest.y, text: `Everyone outside the hunt drops two lines and narrows — ${deepest.label} organizes it; if the five seconds fail, sprint home, no half-pressing` });
+      }
+      runnerWarning();
+      ballPath.push(loss);
+      if (escape) ballPath.push({ x: escape.x, y: escape.y }, { x: clamp(escape.x), y: clamp(escape.y - 6) });
+      const breaker = front.filter((p) => !used.has(p.id))[0] ?? front[0];
+      if (breaker) ballPath.push({ x: breaker.x, y: breaker.y }, { x: 50, y: 10 });
+      break;
+    }
+
+    // ── DEFENDING THE CROSS: pressure the crosser, zonal front post, mark
+    // the arrivals, own the cutback, track the back post.
+    case "defCross": {
+      const crossSpot = { x: 16, y: 76 };
+      const presser = field.filter((p) => p.y > 55).sort((a, b) => dist(a, crossSpot) - dist(b, crossSpot))[0];
+      if (presser) {
+        used.add(presser.id);
+        push({ kind: "press", x: crossSpot.x, y: crossSpot.y, from: { x: presser.x, y: presser.y }, text: `${presser.label} pressures the crosser — take away the DRIVEN ball; a floated cross is a keeper's ball at this age` });
+      }
+      const arrivals = L.front.filter((o) => o.y > 62).sort((a, b) => b.y - a.y).slice(0, 2);
+      const marks = assignJobs(arrivals, backs, used, 34);
+      for (const j of marks.slice(0, 2)) {
+        push({ kind: "press", x: j.target.x, y: j.target.y, from: { x: j.our.x, y: j.our.y }, text: `${j.our.label} bodies their ${wordFor(j.target)} — goal-side and inside the line of the ball; first contact WINS` });
+      }
+      const backPost = L.front.filter((o) => o.x > 55).sort((a, b) => b.x - a.x)[0];
+      if (backPost && !arrivals.includes(backPost)) {
+        const tracker = backs.filter((p) => !used.has(p.id)).sort((a, b) => dist(a, backPost) - dist(b, backPost))[0];
+        const coachable = tracker && dist(tracker, backPost) <= 35;
+        push({
+          kind: "danger", x: backPost.x, y: backPost.y,
+          from: coachable ? { x: tracker.x, y: tracker.y } : undefined,
+          text: coachable
+            ? `Their ${wordFor(backPost)} drifts to the back post — ${tracker.label} tracks him; that's where youth crosses actually land`
+            : `Their ${wordFor(backPost)} lurks at the back post and nobody's spare — the whole line drops a step and the keeper OWNS anything floated there`,
+        });
+      }
+      const cb = [...mids.filter((p) => !used.has(p.id)), ...front.filter((p) => !used.has(p.id)), ...backs.filter((p) => !used.has(p.id))]
+        .sort((a, b) => dist(a, { x: 48, y: 74 }) - dist(b, { x: 48, y: 74 }))[0];
+      if (cb) push({ kind: "exploit", x: 48, y: 74, from: { x: cb.x, y: cb.y }, text: `${cb.label} owns the cutback zone — when the byline pass comes square, he's already there` });
+      ballPath.push(crossSpot, { x: 44, y: 86 }, { x: 55, y: 78 });
+      const outlet = [...field].sort((a, b) => a.y - b.y)[0];
       if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
+      break;
+    }
+
+    // ── BUILD-UP: the numbers game in the first line, the free man between
+    // their lines, and the gate through their press.
+    case "buildup": {
+      const pressers = L.front.filter((o) => o.y > 50);
+      const buildUnit = [...backs.filter((p) => p.y > 55), ...(ourGK ? [ourGK] : [])];
+      const plus = buildUnit.length - pressers.length;
+      const anchor = ourGK ?? buildUnit[0] ?? field[0];
+      if (pressers.length > 0 && anchor) {
+        push({
+          kind: plus > 0 ? "free" : "danger",
+          x: anchor.x, y: anchor.y,
+          text: plus > 0
+            ? `Numbers: ${buildUnit.length}v${pressers.length} in the first line — you have +${plus}. Be brave, the spare man ALWAYS comes free; find him and the press is beaten`
+            : `Numbers: ${buildUnit.length}v${pressers.length} in the first line — no spare man. Don't build short into an even press: bounce it off the 9 or go long to the far side`,
+        });
+      }
+      // the free man between their pressing wave and their second line
+      const frontYs = L.front.map((o) => o.y);
+      const midYs = L.mid.map((o) => o.y);
+      const pocketTop = midYs.length ? Math.max(...midYs) : 40;
+      const pocketBottom = frontYs.length ? Math.min(...frontYs) : 65;
+      const freeMan = field
+        .filter((p) => p.y > pocketTop + 3 && p.y < pocketBottom - 3 && Math.min(...opps.map((o) => dist(o, p))) > 11)
+        .sort(byCentral)[0];
+      if (freeMan) {
+        push({ kind: "free", x: freeMan.x, y: freeMan.y, text: `${freeMan.label} is between their lines with nobody touch-tight — the pass into HIM breaks two lines at once; receive half-turned` });
+      }
+      // the widest gate in their pressing front
+      if (pressers.length >= 2) {
+        const xs = [6, ...pressers.map((o) => o.x).sort((a, b) => a - b), 94];
+        let bestW = 0, bestX = 50;
+        for (let i = 1; i < xs.length; i++) {
+          if (xs[i] - xs[i - 1] > bestW) { bestW = xs[i] - xs[i - 1]; bestX = (xs[i] + xs[i - 1]) / 2; }
+        }
+        if (bestW >= 16) {
+          const carrier = backs.sort((a, b) => Math.abs(a.x - bestX) - Math.abs(b.x - bestX))[0];
+          push({ kind: "exploit", x: clamp(bestX, 8, 92), y: clamp((pressers.reduce((s, o) => s + o.y, 0) / pressers.length) - 8, 30), from: carrier ? { x: carrier.x, y: carrier.y } : undefined, text: `Their press has a ${Math.round(bestW)}-wide gate here — ${carrier ? `${carrier.label} drives through it on the dribble` : "drive through it"}; a defender carrying beats a press no pass can` });
+        }
+      }
+      runnerWarning();
+      // route: GK → spare back → free man / gate → forward
+      if (anchor) {
+        ballPath.push({ x: anchor.x, y: anchor.y });
+        const spare = backs.filter((p) => Math.min(...opps.map((o) => dist(o, p))) > 10).sort((a, b) => b.y - a.y)[0];
+        if (spare) ballPath.push({ x: spare.x, y: spare.y });
+        if (freeMan) ballPath.push({ x: freeMan.x, y: freeMan.y });
+        const target = [...front].sort(byCentral)[0];
+        if (target && target !== freeMan) ballPath.push({ x: target.x, y: target.y });
+        ballPath.push({ x: 50, y: 10 });
+      }
+      break;
+    }
+
+    // ── ATTACKING TRANSITION: first pass into the outlet's FEET, runners
+    // beyond, and an honest count against their rest defense.
+    case "attTransition": {
+      const outlet = [...front].sort(byCentral)[0];
+      if (outlet) {
+        push({ kind: "free", x: outlet.x, y: outlet.y, text: `First pass goes INTO ${outlet.label} — feet, not space; he sets it and the picture opens. Three passes, ten seconds, shot` });
+      }
+      const theirRest = L.back.filter((o) => o.y < 50);
+      const runners = front.filter((p) => p !== outlet && p.y < 35).slice(0, 2);
+      if (runners.length && theirRest.length) {
+        const r0 = runners[0];
+        push({
+          kind: runners.length >= theirRest.length ? "exploit" : "press",
+          x: r0.x, y: clamp(r0.y - 8),
+          from: { x: r0.x, y: r0.y },
+          text: `${runners.map((r) => r.label).join(" + ")} sprint beyond their last ${theirRest.length} — it's ${runners.length}v${theirRest.length} back there${runners.length >= theirRest.length ? ": commit, this is the goal moment" : ": one more runner or keep the ball"}`,
+        });
+      }
+      // the channel their recovery leaves open
+      if (theirRest.length >= 2) {
+        const xs = [8, ...theirRest.map((o) => o.x).sort((a, b) => a - b), 92];
+        let bestW = 0, bestX = 50;
+        for (let i = 1; i < xs.length; i++) {
+          if (xs[i] - xs[i - 1] > bestW) { bestW = xs[i] - xs[i - 1]; bestX = (xs[i] + xs[i - 1]) / 2; }
+        }
+        if (bestW >= 18) push({ kind: "exploit", x: clamp(bestX, 10, 90), y: clamp(Math.min(...theirRest.map((o) => o.y)) - 8, 6), text: `Their recovery leaves a ${Math.round(bestW)}-wide channel — the through ball goes THERE before they set` });
+      }
+      const home = field.filter((p) => p.y >= 50);
+      if (home.length < 2 && backs[0]) {
+        push({ kind: "danger", x: backs[0].x, y: backs[0].y, text: `Rest defense is light — ${backs.map((b) => b.label).slice(0, 2).join(" + ")} do NOT join; lose this ball and it's a footrace at our goal` });
+      }
+      const win = { x: 46, y: 56 };
+      ballPath.push(win);
+      if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
+      if (runners[0]) ballPath.push({ x: runners[0].x, y: clamp(runners[0].y - 10) });
       ballPath.push({ x: 50, y: 8 });
+      break;
     }
-  } else {
-    // We attack; their block sits between us and their goal (small y).
-    const theirGK = oppsByY[0];
-    const line = oppsByY.slice(1, 6).filter((o) => o.y <= oppsByY[1].y + 14).slice(0, 5);
-    // the free man: our most advanced player no red shirt can touch
-    const freeMen = field
-      .filter((p) => p.y > 18 && p.y < 72 && Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 12)
-      .sort((a, b) => a.y - b.y);
-    const freeMan = freeMen.find((p) => Math.abs(p.x - 50) < 28) ?? freeMen[0];
-    if (freeMan) {
-      push({ kind: "free", x: freeMan.x, y: freeMan.y, text: `${freeMan.label} is the free man — no red shirt within a pass; play through him, receive on the half-turn` });
-    }
-    // the channel: widest gap across their last line (touchline to touchline)
-    let gap: { x: number; y: number } | null = null;
-    if (line.length >= 2) {
-      const xs = [8, ...line.map((o) => o.x).sort((a, b) => a - b), 92];
-      let bestW = 0, bestX = 50;
-      for (let i = 1; i < xs.length; i++) {
-        const w = xs[i] - xs[i - 1];
-        if (w > bestW) { bestW = w; bestX = (xs[i] + xs[i - 1]) / 2; }
+
+    // ── WIDE ATTACK: count the overload flank, isolate the weak side,
+    // and beat the block with the cutback, not the floated cross.
+    case "wideAttack": {
+      const flankOurs = field.filter((p) => p.x >= 60);
+      const flankTheirs = opps.filter((o) => o.x >= 55 && o.y < 60);
+      const carrier = flankOurs.sort((a, b) => b.x - a.x)[0];
+      if (carrier) {
+        push({
+          kind: flankOurs.length > flankTheirs.length ? "exploit" : "press",
+          x: carrier.x, y: carrier.y,
+          text: `${flankOurs.length}v${flankTheirs.length} on the overload side — ${flankOurs.length > flankTheirs.length ? `they can't cover it: ${carrier.label} takes his man on or plays the overlap` : `even numbers: ${carrier.label} waits for the overlap before committing`}`,
+        });
       }
-      const lineY = line.reduce((s, o) => s + o.y, 0) / line.length;
-      if (bestW >= 18) {
-        gap = { x: clamp(bestX, 10, 90), y: clamp(lineY - 9, 6) };
-        const runnerUp = field.filter((p) => ["ST", "W", "AM"].includes(p.role)).sort(nearestTo(gap))[0];
-        push({ kind: "exploit", x: gap.x, y: gap.y, from: runnerUp ? { x: runnerUp.x, y: runnerUp.y } : undefined, text: `${Math.round(bestW)}-wide channel in their last line — ${runnerUp ? `${runnerUp.label} attacks it` : "attack it"} with a run in behind` });
+      const weakSideDef = opps.filter((o) => o.x < 45 && o.y < 60);
+      const farPost = field.filter((p) => p.x < 45 && p.y < 30).sort((a, b) => a.x - b.x)[0];
+      if (farPost && weakSideDef.length <= 1) {
+        push({ kind: "free", x: farPost.x, y: farPost.y, text: `Their weak side is ${weakSideDef.length === 0 ? "EMPTY" : "1v1"} — ${farPost.label} holds the far post until the last second; the early switch is a free shot` });
       }
-    }
-    // overloaded player warning: one of ours with two red shirts on him
-    for (const p of field) {
-      const close = opps.filter((o) => Math.hypot(o.x - p.x, o.y - p.y) < 9).length;
-      if (close >= 2) {
-        push({ kind: "danger", x: p.x, y: p.y, text: `${p.label} has ${close} red shirts on him — don't force it there, switch away from the crowd` });
-        break;
+      const theirLine = classifyOpp(opps).back;
+      const deepBlock = theirLine.length > 0 && theirLine.every((o) => o.y > 8) && (L.gk ? theirLine[0].y - L.gk.y < 20 : true);
+      const cutbackMan = field.filter((p) => p.y > 24 && p.y < 42 && p.x > 40 && p.x < 70).sort(byCentral)[0];
+      if (cutbackMan && deepBlock) {
+        push({ kind: "exploit", x: cutbackMan.x, y: cutbackMan.y, text: `They're dropping onto their box — the CUTBACK to ${cutbackMan.label} beats the floated cross every time at youth level; byline, then square` });
       }
+      const theirOutlet = [...L.front, ...L.mid].filter((o) => o.y > 45).sort((a, b) => b.y - a.y)[0];
+      const balance = theirOutlet ? field.filter((p) => p.y >= 48).sort((a, b) => dist(a, theirOutlet) - dist(b, theirOutlet))[0] : undefined;
+      if (theirOutlet && balance) {
+        const coachable = dist(balance, theirOutlet) <= 40;
+        push({
+          kind: "danger", x: theirOutlet.x, y: theirOutlet.y,
+          from: coachable ? { x: balance.x, y: balance.y } : undefined,
+          text: coachable
+            ? `Their ${wordFor(theirOutlet)} waits for the counter — ${balance.label} stays touch-tight while we attack; the cross we lose becomes THEIR chance`
+            : `Their ${wordFor(theirOutlet)} waits for the counter with nobody near — keep the rest-defense honest: the back line shades his side while we attack`,
+        });
+      }
+      const pivotBall = field.filter((p) => p.y > 40 && p.y < 55).sort(byCentral)[0];
+      if (pivotBall) ballPath.push({ x: pivotBall.x, y: pivotBall.y });
+      if (carrier) ballPath.push({ x: carrier.x, y: carrier.y }, { x: clamp(carrier.x + 5, 10, 94), y: clamp(carrier.y - 12, 8) });
+      if (cutbackMan && deepBlock) ballPath.push({ x: cutbackMan.x, y: cutbackMan.y });
+      else if (farPost) ballPath.push({ x: farPost.x, y: farPost.y });
+      ballPath.push({ x: 50, y: 6 });
+      break;
     }
-    // everyone marked and no channel: the answer is circulation to the
-    // lighter flank — say so, and route the ball that way
-    if (callouts.length === 0) {
-      const leftLoad = opps.filter((o) => o.x < 50).length;
-      const lightX = leftLoad > opps.length / 2 ? 78 : 22;
-      const wide = field.filter((p) => (lightX > 50 ? p.x > 55 : p.x < 45)).sort((a, b) => a.y - b.y)[0];
-      push({ kind: "exploit", x: wide ? wide.x : lightX, y: wide ? wide.y : 40, text: `Everyone central is marked — they're loaded ${leftLoad > opps.length / 2 ? "left" : "right"}. Two-touch circulation and switch to ${wide ? wide.label : "the far side"} before their block shifts` });
-    }
-    // ball story: from the back, through the free man, into the channel
-    const starter = ours.find((p) => p.role === "GK") ?? [...ours].sort((a, b) => b.y - a.y)[0];
-    if (starter) {
-      ballPath.push({ x: starter.x, y: starter.y });
-      const back = field.filter((p) => ["CB", "FB", "DM"].includes(p.role) && p.id !== freeMan?.id && Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 10).sort((a, b) => b.y - a.y)[0];
-      if (back) ballPath.push({ x: back.x, y: back.y });
-      if (freeMan) ballPath.push({ x: freeMan.x, y: freeMan.y });
-      ballPath.push(gap ?? { x: 50, y: 12 });
-      if (gap) ballPath.push({ x: 50, y: 6 });
-    }
+
+    default:
+      break;
   }
+
+  // Every matchup produces SOMETHING useful — a blank board teaches nothing.
+  if (callouts.length === 0) {
+    const leftLoad = opps.filter((o) => o.x < 50).length;
+    const lightX = leftLoad > opps.length / 2 ? 78 : 22;
+    const wide = field.filter((p) => (lightX > 50 ? p.x > 55 : p.x < 45)).sort((a, b) => a.y - b.y)[0];
+    push({ kind: "exploit", x: wide ? wide.x : lightX, y: wide ? wide.y : 40, text: `They're loaded ${leftLoad > opps.length / 2 ? "left" : "right"} — two-touch circulation and switch to ${wide ? wide.label : "the far side"} before their block shifts across` });
+  }
+  if (ballPath.length === 1) ballPath.length = 0;
+  for (const p of ballPath) { p.x = clamp(p.x, 4, 96); p.y = clamp(p.y, 4, 96); }
   return { callouts, ballPath };
 }
 
