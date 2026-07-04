@@ -96,12 +96,23 @@ check("formation deep gated for free -> 403", s == 403)
 s, r = call("POST", "/formation", {"format": "9v9", "ageGroup": "U11", "depth": "deep"}, PRO)
 check("formation deep for pro", s == 200)
 
-# ---------- board move read ----------
-board_pieces = [{"id": "W1", "role": "W", "label": "LW", "x": 8, "y": 15}, {"id": "GK1", "role": "GK", "label": "GK", "x": 50, "y": 92}]
-s, r = call("POST", "/board/move", {"formation": "4-3-3", "format": "11v11", "scenario": "highpress", "board": board_pieces, "move": {"label": "LW", "from": {"x": 12, "y": 28}, "to": {"x": 8, "y": 15}}, "depth": "quick"}, PRO)
-check("board move read", s == 200, str(r)[:160])
-s, r = call("POST", "/board/move", {"formation": "4-3-3", "board": board_pieces, "question": "should we press their keeper?"}, FREE)
-check("board question (free quick)", s == 200, str(r)[:160])
+# ---------- board scenario painter ----------
+board_pieces = [
+  {"label": "GK", "role": "GK", "x": 50, "y": 92}, {"label": "LCB", "role": "CB", "x": 35, "y": 74},
+  {"label": "RCB", "role": "CB", "x": 65, "y": 74}, {"label": "LCM", "role": "CM", "x": 22, "y": 52},
+  {"label": "CCM", "role": "CM", "x": 50, "y": 52}, {"label": "RCM", "role": "CM", "x": 78, "y": 52},
+  {"label": "ST", "role": "ST", "x": 50, "y": 28},
+]
+s, r = call("POST", "/board/scenario", {"formation": "2-3-1", "format": "7v7", "scenario": "press their build-up high and trap on the touchline", "board": board_pieces, "facts": ["Our shape by thirds: 2/3/1"], "depth": "quick"}, PRO)
+check("board scenario paints", s == 200 and len(r.get("picture", {}).get("positions", [])) >= 6 and "headline" in r.get("picture", {}), str(r)[:160])
+check("paint positions are our labels only", s == 200 and all(p["label"] in [b["label"] for b in board_pieces] for p in r["picture"]["positions"]))
+check("paint callouts bounded", s == 200 and 1 <= len(r["picture"]["callouts"]) <= 5)
+s, r = call("POST", "/board/scenario", {"formation": "2-3-1", "format": "7v7", "scenario": "x", "board": board_pieces}, PRO)
+check("too-short scenario -> 400", s == 400, f"status {s}")
+s, r = call("POST", "/board/scenario", {"formation": "2-3-1", "format": "7v7", "scenario": "press them high", "board": board_pieces, "depth": "deep"}, FREE)
+check("deep paint gated free -> 403", s == 403, f"status {s}")
+s, r = call("POST", "/board/scenario", {"formation": "2-3-1", "format": "7v7", "scenario": "press them high", "board": board_pieces, "depth": "quick"}, FREE)
+check("quick paint for free", s == 200, str(r)[:120])
 
 # ---------- match day ----------
 s, r = call("POST", "/matchday/pregame", {"opponent": "Rivals FC", "notes": "they press high"}, PRO)

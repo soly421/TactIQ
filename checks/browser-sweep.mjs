@@ -68,30 +68,20 @@ ok("drill diagrams render", svgs >= 2, `${svgs} svgs`);
 // ---------- TACTICS BOARD ----------
 await page.click("nav >> text=Tactics Board");
 await page.waitForTimeout(900);
-// formats and one formation from each
 for (const fmt of ["7v7", "9v9", "11v11"]) {
   await page.click(`button:has-text("${fmt}")`);
   await page.waitForTimeout(350);
   ok(`format ${fmt} selectable`, true);
 }
-// cycle every scenario on 11v11 4-3-3
-await page.click("button:has-text('4-3-3')");
-await page.waitForTimeout(300);
-for (const sc of ["Base Shape", "Build-Up", "High Press", "Mid Block", "Low Block", "Attacking Transition", "Counter-Press", "Wide Attack", "Defending the Cross"]) {
-  const b = page.locator(`button:has-text("${sc}")`).first();
-  if (await b.count()) { await b.click(); await page.waitForTimeout(500); ok(`scenario: ${sc}`, true); }
-  else ok(`scenario: ${sc}`, false, "button missing");
-}
+ok("scenario text box present", await has("textarea"));
+ok("example chips present", await has("button:has-text('Defend a lead')"));
 ok("opposition picker present", await has("text=Opposition"));
-// matchup layer: place an opponent formation, expect callouts + ball route
-await page.click("button:has-text('High Press')");
-await page.waitForTimeout(600);
-await page.selectOption("select", { index: 1 });
-await page.waitForTimeout(1000);
-ok("matchup plan card", await has("text=The matchup plan"));
-ok("suggested ball route", (await page.locator("svg line[stroke='#4cc9f0']").count()) >= 2);
-await page.selectOption("select", { index: 0 });
-await page.waitForTimeout(400);
+// demo paint: chip -> draw it up -> painted plan card renders
+await page.click("button:has-text('High press')");
+await page.waitForTimeout(200);
+await page.click("button:has-text('Draw it up')");
+await page.waitForTimeout(1200);
+ok("paint plan card renders", await has("text=/Demo picture|authored demo picture/i"));
 // freehand mode
 const freehand = page.locator("button:has-text('Freehand sketch')");
 if (await freehand.count()) { await freehand.click(); await page.waitForTimeout(700); ok("freehand board renders", await has("svg")); await page.click("button:has-text('Formations & scenarios')"); }

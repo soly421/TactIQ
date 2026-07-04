@@ -1206,6 +1206,69 @@ export function boardAssessment(pieces: Piece[]): BoardRead {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Text -> scenario: keyword matcher used by DEMO mode to pick the closest
+// authored picture for a described situation. The live engine paints the
+// exact scenario; this keeps the board alive without a key. Order matters —
+// more specific intents are tested before generic keywords.
+// ---------------------------------------------------------------------------
+
+export function scenarioFromText(text: string): ScenarioId | null {
+  const t = text.toLowerCase();
+  const table: [ScenarioId, RegExp][] = [
+    ["defCross", /defend(ing)?\s+(the\s+)?cross|crosses (against|coming)|corner(s)? against|box defend/],
+    ["defTransition", /counter.?press|after (losing|we lose)|lost the ball|lose the ball|5.second|react.*turnover|win it back (right away|immediately)/],
+    ["lowblock", /low block|park(ed)?|deep block|bunker|defend (a |the )?lead|minutes left|see (it|the game) out|hold (on|the lead)|protect the lead|throwing (numbers|everyone|players)|everyone forward|up \d+.\d+/],
+    ["attTransition", /counter.?attack|fast break|break (quickly|fast)|transition to attack|win the ball.*(counter|go|fast|quick)|moment we win/],
+    ["midblock", /mid block|midblock|sit mid|medium block|shift together|compact.*(middle|block)|screen.*pivot/],
+    ["highpress", /high press|press (their|them|the keeper|the goalie)|we press|press.*high up|trap.*touchline|touchline.*trap|force.*wide.*(trap|press)|win it high/],
+    ["buildup", /they press us|press us|build.?out|build.?up|play(ing)? out|goal kick|from the back|beat (the|their) press|break (the|their) press|first line/],
+    ["wideAttack", /wide|overload|byline|cutback|cross(es|ing)? (from|into)|flank|isolat.*(winger|back)|switch.*attack/],
+  ];
+  for (const [id, rx] of table) if (rx.test(t)) return id;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Verified geometric facts: the numbers the AI must never get wrong, computed
+// here and handed to the model as ground truth. The math feeds facts IN and
+// validates paint coming OUT — the AI does all the talking in between.
+// ---------------------------------------------------------------------------
+
+export function geometryFacts(ours: Piece[], opps: Piece[]): string[] {
+  const facts: string[] = [];
+  const field = ours.filter((p) => p.role !== "GK" && p.role !== "OPP");
+  const gk = ours.find((p) => p.role === "GK");
+  if (field.length < 3) return facts;
+
+  const band = (ps: { y: number }[], lo: number, hi: number) => ps.filter((p) => p.y >= lo && p.y < hi).length;
+  facts.push(`Our shape by thirds (excl. GK): ${band(field, 62, 101)} defensive / ${band(field, 38, 62)} middle / ${band(field, 0, 38)} attacking`);
+  if (gk) facts.push(`Our GK is at [${Math.round(gk.x)},${Math.round(gk.y)}]${gk.y < 60 ? " — UPFIELD, the goal is unguarded" : ""}`);
+
+  const ys = field.map((p) => p.y).sort((a, b) => a - b);
+  let gap = 0;
+  for (let i = 1; i < ys.length; i++) gap = Math.max(gap, ys[i] - ys[i - 1]);
+  if (gap > 25) facts.push(`Largest vertical gap between our lines: ${Math.round(gap)} grid units`);
+
+  const meanX = field.reduce((s, p) => s + p.x, 0) / field.length;
+  if (Math.abs(meanX - 50) > 12) facts.push(`Our shape leans ${meanX < 50 ? "left" : "right"} (mean x=${Math.round(meanX)})`);
+
+  const isolated = field.filter((p) => Math.min(...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 26);
+  if (isolated.length) facts.push(`Isolated (no teammate within a pass): ${isolated.map((p) => p.label).join(", ")}`);
+
+  if (opps.length) {
+    facts.push(`Their shape by thirds (from our view): ${band(opps, 62, 101)} in our defensive third / ${band(opps, 38, 62)} middle / ${band(opps, 0, 38)} in their half`);
+    const ourFree = field.filter((p) => Math.min(...opps.map((o) => Math.hypot(o.x - p.x, o.y - p.y))) > 12).map((p) => p.label);
+    if (ourFree.length) facts.push(`OUR players with no opponent within 12 units: ${ourFree.join(", ")}`);
+    const theirFree = opps.filter((o) => Math.min(...ours.map((p) => Math.hypot(p.x - o.x, p.y - o.y))) > 13).map((o) => o.label);
+    if (theirFree.length) facts.push(`THEIR unmarked players: ${theirFree.join(", ")}`);
+    const ourBuild = field.filter((p) => ["CB", "FB"].includes(p.role) && p.y > 55).length + (gk ? 1 : 0);
+    const theirAdvanced = opps.filter((o) => o.y > 50).length;
+    if (theirAdvanced > 0) facts.push(`First-line numbers if we build short: ${ourBuild}v${theirAdvanced} ${ourBuild > theirAdvanced ? `(+${ourBuild - theirAdvanced} for us)` : ourBuild === theirAdvanced ? "(even — no spare man)" : "(we are OUTNUMBERED)"}`);
+  }
+  return facts.slice(0, 10);
+}
+
 // Live shape meters — the FIFA-style bars that move while you drag.
 export function shapeMeters(pieces: Piece[]): { compact: number; width: number; cover: number } {
   const field = pieces.filter((p) => p.role !== "GK");

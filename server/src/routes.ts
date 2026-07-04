@@ -7,7 +7,7 @@ import { generateText, bandFor as bandForAgeServer, generateStructured, streamTo
 import { streamText } from "./providers.js";
 import {
   MOCK_CHAT_REPLY, MOCK_DEBRIEF, MOCK_FILM, MOCK_FORMATION, MOCK_GAME_PLAN, MOCK_GUIDANCE, mockFormation, mockSessionPlan,
-  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN, mockBoardVerdict, mockSeasonPlan,
+  MOCK_LIVE_REPLY, MOCK_SEASON_PLAN, MOCK_SESSION_PLAN, mockSeasonPlan,
 } from "./mock.js";
 import { setCoachProfile, getCoachProfile, getSeasonEntryById, deleteSeasonEntry, refundMessage, topAdvisorNames, setUserTz, userToday,
   adminOverview, estCostToday, getUserBilling, markClubInterest,
@@ -917,24 +917,97 @@ api.put("/settings/plan", (req, res) => {
   res.json(settingsPayload(userId));
 });
 
-// ---- The Board Engine: real-time AI read of a modified formation ----
-// Chess.com for coaches: drop a piece, the engine tells you what you gained
-// and what you gave away. Cheapest tier, tiny output, daily cap.
+// ---- The Tactical Painter: the coach DESCRIBES the situation, the engine
+// paints the answer on the board — positions for every player, the ball's
+// route, numbered instructions, one headline. Verified geometric facts are
+// computed client-side and passed in as ground truth; the paint is validated
+// against hard geometry on the way back. The math checks, the AI talks.
 const BOARD_READS_PER_DAY: Record<Plan, number> = { free: 20, pro: 300 };
 
-const BOARD_VERDICT_SCHEMA = {
+const BOARD_SCENARIO_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["headline", "gains", "risks", "counterMove"],
+  required: ["headline", "rationale", "positions", "ballPath", "callouts"],
   properties: {
-    headline: { type: "string", description: "One punchy sentence naming the tactical idea of this move" },
-    gains: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "What this shape wins, concretely (zones, overloads, numbers)" },
-    risks: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "What it concedes and WHERE the space is" },
-    counterMove: { type: "string", description: "The one adjustment that covers the biggest risk (name the role that must react)" },
+    headline: { type: "string", description: "The ONE instruction to shout from the touchline for this situation" },
+    rationale: { type: "string", description: "2-3 sentences reading the WHOLE picture: their threat, our answer, the trade we accept" },
+    positions: {
+      type: "array",
+      description: "Target position for EVERY one of our players (every label exactly once)",
+      items: {
+        type: "object", additionalProperties: false, required: ["label", "x", "y"],
+        properties: { label: { type: "string" }, x: { type: "number" }, y: { type: "number" } },
+      },
+    },
+    opponentPositions: {
+      type: "array",
+      description: "Optional: adjusted positions for their players if the described situation moves them",
+      items: {
+        type: "object", additionalProperties: false, required: ["label", "x", "y"],
+        properties: { label: { type: "string" }, x: { type: "number" }, y: { type: "number" } },
+      },
+    },
+    ballPath: {
+      type: "array", minItems: 2, maxItems: 6,
+      description: "The ball's route for this plan, first touch to the moment it succeeds",
+      items: { type: "object", additionalProperties: false, required: ["x", "y"], properties: { x: { type: "number" }, y: { type: "number" } } },
+    },
+    callouts: {
+      type: "array", minItems: 3, maxItems: 5,
+      description: "On-field coaching instructions, anchored where the action happens",
+      items: {
+        type: "object", additionalProperties: false, required: ["kind", "x", "y", "text"],
+        properties: {
+          kind: { type: "string", enum: ["press", "free", "exploit", "danger"] },
+          x: { type: "number" }, y: { type: "number" },
+          fromLabel: { type: "string", description: "Our player whose job this is — draws the assignment arrow" },
+          text: { type: "string", description: "The instruction, in touchline language a youth coach would shout" },
+        },
+      },
+    },
   },
 };
 
-api.post("/board/move", async (req, res) => {
+interface PaintedPicture {
+  headline: string;
+  rationale: string;
+  positions: { label: string; x: number; y: number }[];
+  opponentPositions?: { label: string; x: number; y: number }[];
+  ballPath: { x: number; y: number }[];
+  callouts: { kind: "press" | "free" | "exploit" | "danger"; x: number; y: number; fromLabel?: string; text: string }[];
+}
+
+const clampGrid = (v: unknown, lo = 3, hi = 97) => Math.min(hi, Math.max(lo, Math.round(Number(v) || 50)));
+
+// Hard geometric sanitation of the model's paint — labels, bounds, caps.
+// The client re-validates and collision-resolves; this is the server floor.
+function sanitizePicture(raw: PaintedPicture, sentLabels: string[]): PaintedPicture {
+  const labelSet = new Set(sentLabels);
+  const seen = new Set<string>();
+  const positions = (raw.positions ?? [])
+    .filter((p) => labelSet.has(String(p.label)) && !seen.has(String(p.label)) && (seen.add(String(p.label)), true))
+    .map((p) => ({ label: String(p.label).slice(0, 8), x: clampGrid(p.x), y: clampGrid(p.y) }));
+  const oppSeen = new Set<string>();
+  const opponentPositions = (raw.opponentPositions ?? [])
+    .filter((p) => !oppSeen.has(String(p.label)) && (oppSeen.add(String(p.label)), true))
+    .slice(0, 15)
+    .map((p) => ({ label: String(p.label).slice(0, 8), x: clampGrid(p.x), y: clampGrid(p.y) }));
+  return {
+    headline: String(raw.headline ?? "").slice(0, 160),
+    rationale: String(raw.rationale ?? "").slice(0, 600),
+    positions,
+    opponentPositions: opponentPositions.length ? opponentPositions : undefined,
+    ballPath: (raw.ballPath ?? []).slice(0, 6).map((p) => ({ x: clampGrid(p.x), y: clampGrid(p.y) })),
+    callouts: (raw.callouts ?? []).slice(0, 5).map((c) => ({
+      kind: (["press", "free", "exploit", "danger"] as const).includes(c.kind) ? c.kind : "exploit",
+      x: clampGrid(c.x), y: clampGrid(c.y),
+      fromLabel: c.fromLabel ? String(c.fromLabel).slice(0, 8) : undefined,
+      text: String(c.text ?? "").slice(0, 240),
+    })).filter((c) => c.text.length > 10),
+  };
+}
+
+api.post("/board/scenario", async (req, res) => {
   const userId = uid(req);
   const day = userToday(userId);
   const key = `boardcap:${userId}:${day}`;
@@ -942,77 +1015,100 @@ api.post("/board/move", async (req, res) => {
   if (used >= BOARD_READS_PER_DAY[planOf(userId)]) {
     res.status(planOf(userId) === "free" ? 403 : 429).json(
       planOf(userId) === "free"
-        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free engine reads today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
+        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free board paints today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
         : { error: "Daily engine limit reached — resets tomorrow." },
     );
     return;
   }
-  // Board reads burn real compute too (deep reads run the flagship engine) —
-  // the dollar ceiling applies here exactly like every other engine call.
   if (overComputeCeiling(userId)) {
     res.status(429).json({ error: CEILING_MSG });
     return;
   }
-  const { format, formation, scenario, board, move, history, depth, opponent, opponents, question } = req.body ?? {};
-  if (!formation || !Array.isArray(board) || (!move && !question)) {
-    res.status(400).json({ error: "formation, board, and a move or question are required" });
+  const { format, formation, scenario, board, opponents, opponent, facts, depth } = req.body ?? {};
+  const scenarioTxt = String(scenario ?? "").trim().slice(0, 500);
+  if (!formation || !Array.isArray(board) || board.length < 5 || scenarioTxt.length < 3) {
+    res.status(400).json({ error: "formation, the board, and a described scenario are required" });
     return;
   }
   const depthTier = depth === "deep" ? "deep" : depth === "standard" ? "standard" : "light";
   if (depthTier !== "light" && planOf(userId) === "free") {
     res.status(403).json(upgradeError(depthTier === "deep"
-      ? "Deep Tactical reads (the flagship engine) are a Pro feature."
-      : "Standard Tactical reads are a Pro feature — free coaches get Quick reads."));
+      ? "Deep Tactical paints (the flagship engine) are a Pro feature."
+      : "Standard Tactical paints are a Pro feature — free coaches get Quick paints."));
     return;
   }
   try {
-    const boardTxt = (board as { label: string; role: string; x: number; y: number }[])
-      .slice(0, 24) // a board is at most 11 players + markers; cap the prompt
+    const boardIn = (board as { label: string; role: string; x: number; y: number }[]).slice(0, 24);
+    const sentLabels = boardIn.map((p) => String(p.label ?? "?").slice(0, 8));
+    const boardTxt = boardIn
       .map((p) => `${String(p.label ?? "?").slice(0, 8)} (${String(p.role ?? "?").slice(0, 4)}) at [${Math.round(Number(p.x) || 0)},${Math.round(Number(p.y) || 0)}]`)
       .join("; ");
-    // Opposition markers the coach placed on the board — same grid as the
-    // coach's own players, so the engine can read the matchups spatially.
     const oppTxt = (Array.isArray(opponents) ? (opponents as { label: string; x: number; y: number }[]) : [])
       .slice(0, 15)
       .map((o) => `${String(o.label ?? "O?").slice(0, 8)} at [${Math.round(Number(o.x) || 0)},${Math.round(Number(o.y) || 0)}]`)
       .join("; ");
-    const verdict = await generateStructured<{ headline: string; gains: string[]; risks: string[]; counterMove: string }>({
+    const factsTxt = (Array.isArray(facts) ? facts : []).slice(0, 10).map((f) => `- ${String(f).slice(0, 160)}`).join("\n");
+
+    const raw = await generateStructured<PaintedPicture>({
       tier: depthTier,
       userId,
       system: `${baseSystemPrompt()}${teamContext(userId)}
 
-You are TactIQ's BOARD ENGINE — the chess engine for soccer shapes. The coach is moving players on a tactics board and you evaluate each move in real time. Coordinates are a 100x100 grid: y=0 is the OPPONENT goal (up = attacking), y=100 their own goal, x=0 left touchline. Be concrete about ZONES and NUMBERS ("their winger now gets the left channel 1v1", "you have a 3v2 in build-up"). Each item under 15 words. If the coach's roster is in team memory, reference actual player names where natural. Youth-appropriate, age-aware.`,
-      user: `Format: ${format}. Formation: ${formation}. Scenario: ${scenario}.
-${opponent ? `OPPOSITION CONTEXT (weigh every read against this): ${String(opponent).slice(0, 300)}` : ""}
-${oppTxt ? `OPPOSITION ON THE BOARD (their players, same 100x100 grid — read every matchup spatially: name who marks whom, where the free man is, where the overloads are): ${oppTxt}` : ""}
-Current board: ${boardTxt}
-${move ? `The coach just moved: ${move}` : ""}
-${Array.isArray(history) && history.length ? `Earlier moves this session: ${history.slice(-4).join("; ")}` : ""}
-${question
-  ? `The coach asks: "${String(question).slice(0, 300)}" — answer FOR THIS EXACT BOARD and opposition. headline = your direct recommendation; gains = why it works here; risks = what to watch; counterMove = the one coaching point to deliver.`
-  : "Evaluate THIS move in the context of the whole current shape and the opposition."}`,
-      schema: BOARD_VERDICT_SCHEMA as unknown as Record<string, unknown>,
-      maxTokens: 500,
-      mock: mockBoardVerdict({
-        move: move ? String(move) : undefined,
-        question: question ? String(question) : undefined,
-        board: board as { label?: string; role?: string; x?: number; y?: number }[],
-        opponents: Array.isArray(opponents) ? (opponents as { label?: string; x?: number; y?: number }[]) : [],
-      }),
+You are TactIQ's TACTICAL PAINTER — a professional first-team analyst who answers a coach's described situation by DRAWING it: exact positions, the ball's route, and touchline instructions. Coordinates: 100x100 grid, y=0 is the OPPONENT goal (up = attacking), y=100 our own goal, x=0 the left touchline; our GK belongs around y=78-95 unless the coach's situation explicitly demands otherwise.
+
+Paint by mainstream doctrine, adapted to the described situation and the age group in team memory:
+- Defending: pressure-cover-balance; blocks compact 30-35 units front-to-back, shifted toward the ball with the weak side tucked; the back line NEVER chases out of shape in a press — the front curves runs and traps on the touchline, mids lock pivots.
+- Build-up: create the +1 against their first line; the spare man carries; a receiver between their lines, half-turned.
+- Transitions: first pass into feet, runners beyond, ALWAYS 2+1 rest defense behind the ball.
+- Crosses/box: goal-side marks, front-post zone, the cutback zone owned by a named player.
+
+Hard rules for the paint:
+- positions must contain EVERY one of our labels exactly once — no additions, no omissions.
+- Realistic spacing: no two players within 5 grid units; keep the picture connected (no player more than ~26 from every teammate unless the situation demands a target/outlet).
+- VERIFIED FACTS below were computed geometrically from the actual board — trust them over your own counting, and reference their numbers in your words.
+- callouts name OUR players by label (and by roster name from team memory when natural), in concrete touchline language a youth coach would actually shout. Anchor each callout where the action happens; set fromLabel to the player whose job it is.
+- ballPath tells this plan's story: where the ball starts, travels, and ends when the plan WORKS.
+- headline: the ONE instruction to shout first. rationale: read the whole picture — their threat, our answer, the trade.`,
+      user: `Format: ${format}. Our formation: ${formation}.
+Our current board: ${boardTxt}
+${oppTxt ? `Their players on the board (same grid): ${oppTxt}` : "No opposition placed — paint against a typical opponent for this age group."}
+${opponent ? `Their game plan, as scouted by the coach: ${String(opponent).slice(0, 300)}` : ""}
+${factsTxt ? `VERIFIED GEOMETRIC FACTS (computed from the board — ground truth):\n${factsTxt}` : ""}
+
+THE COACH'S SITUATION — paint the answer to exactly this:
+"${scenarioTxt}"`,
+      schema: BOARD_SCENARIO_SCHEMA as unknown as Record<string, unknown>,
+      maxTokens: 3000,
+      mock: {
+        headline: "Demo — the live engine paints your exact scenario (client renders the authored picture instead)",
+        rationale: "Without an engine key the app paints the closest authored scenario locally. Add ANTHROPIC_API_KEY and this becomes a live tactical read of your described situation.",
+        positions: boardIn.map((p) => ({ label: String(p.label ?? "?").slice(0, 8), x: Math.round(Number(p.x) || 50), y: Math.round(Number(p.y) || 50) })),
+        ballPath: [{ x: 50, y: 88 }, { x: 50, y: 50 }],
+        callouts: [
+          { kind: "exploit" as const, x: 50, y: 50, text: "Demo mode — the live engine will place instructions exactly where the action is for your scenario" },
+          { kind: "free" as const, x: 50, y: 70, text: "Your positions and opposition are already being read — only the judgment layer is waiting on the key" },
+          { kind: "danger" as const, x: 50, y: 30, text: "Set ANTHROPIC_API_KEY on the server to activate live paints" },
+        ],
+      },
     });
-    if (question) {
-      addSeasonEntry(userId, {
-        kind: "formation",
-        title: `Board question — ${formation} (${scenario})`,
-        summary: `Coach asked: "${snip(String(question), 110)}" — engine: ${snip(verdict.headline, 140)}`,
-      });
+    const picture = sanitizePicture(raw, sentLabels);
+    // A paint that lost more than 20% of the squad is a failed paint — the
+    // coach never sees a half-drawn board.
+    if (picture.positions.length < Math.ceil(sentLabels.length * 0.8)) {
+      res.status(502).json({ error: "The engine returned an incomplete picture — try again, it won't count against your daily limit." });
+      return;
     }
-    kvSet(key, String(used + 1)); // the read only counts once the engine answered
+    addSeasonEntry(userId, {
+      kind: "formation",
+      title: `Board: ${snip(scenarioTxt, 70)}`,
+      summary: `${formation} (${format}) — ${snip(picture.headline, 130)}`,
+    });
+    kvSet(key, String(used + 1)); // the paint only counts once the engine delivered
     const gamify = award(userId, "board");
-    res.json({ verdict, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
+    res.json({ picture, award: gamify, readsLeft: BOARD_READS_PER_DAY[planOf(userId)] - used - 1 });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Engine read failed — try the next move." });
+    res.status(500).json({ error: "The paint failed — nothing was counted against your daily limit. Try again." });
   }
 });
 
