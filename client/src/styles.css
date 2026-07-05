@@ -524,6 +524,21 @@ ul.points li { margin: 4px 0; font-size: 13.5px; line-height: 1.5; }
   cursor: pointer; font-size: 10px; padding: 0; line-height: 1;
 }
 .frame-x:hover { color: var(--red); }
+
+/* the engine's read of a manual move — gains vs costs + an overall verdict */
+.move-read { border-top: 3px solid var(--turquoise); }
+.move-read-risky { border-top-color: var(--red); }
+.move-read-better { border-top-color: var(--green); }
+.verdict-pill { font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.verdict-better { color: var(--green); border-color: rgba(74,222,128,0.5); background: rgba(74,222,128,0.08); }
+.verdict-tradeoff { color: var(--turquoise); border-color: rgba(45,212,191,0.5); background: rgba(45,212,191,0.08); }
+.verdict-risky { color: var(--red); border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.08); }
+.mr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .mr-cols { grid-template-columns: 1fr; } }
+.mr-head { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
+.mr-gain { color: var(--green); }
+.mr-cost { color: #fbbf6e; }
+.mr-line { line-height: 1.45; padding: 3px 0; border-top: 1px solid rgba(255,255,255,0.05); }
 .explorer-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 920px) { .explorer-grid { grid-template-columns: 1fr; } }
 .meters { display: flex; gap: 14px; flex-wrap: wrap; }

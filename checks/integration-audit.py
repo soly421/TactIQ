@@ -114,6 +114,17 @@ check("deep paint gated free -> 403", s == 403, f"status {s}")
 s, r = call("POST", "/board/scenario", {"formation": "2-3-1", "format": "7v7", "scenario": "press them high", "board": board_pieces, "depth": "quick"}, FREE)
 check("quick paint for free", s == 200, str(r)[:120])
 
+# ---------- read my change (move read) ----------
+moved_board = [dict(p, y=(30 if p["label"] == "GK" else p["y"])) for p in board_pieces]
+prev_board = [{"label": p["label"], "x": p["x"], "y": p["y"]} for p in board_pieces]
+moved = [{"label": "GK", "from": {"x": 50, "y": 92}, "x": 50, "y": 30}]
+s, r = call("POST", "/board/read-move", {"format": "7v7", "formation": "2-3-1", "board": moved_board, "previous": prev_board, "moved": moved, "depth": "quick"}, PRO)
+check("move read returns gains/costs/verdict", s == 200 and isinstance(r.get("read", {}).get("gains"), list) and r["read"].get("verdict") in ("better", "tradeoff", "risky"), str(r)[:160])
+s, r = call("POST", "/board/read-move", {"board": board_pieces, "moved": []}, PRO)
+check("move read with no move -> 400", s == 400, f"status {s}")
+s, r = call("POST", "/board/read-move", {"board": moved_board, "moved": moved, "depth": "deep"}, FREE)
+check("deep move read gated free -> 403", s == 403, f"status {s}")
+
 # ---------- match day ----------
 s, r = call("POST", "/matchday/pregame", {"opponent": "Rivals FC", "notes": "they press high"}, PRO)
 check("pregame plan", s == 200, str(r)[:120])

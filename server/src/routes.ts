@@ -1131,6 +1131,110 @@ THE COACH'S SITUATION — paint the answer to exactly this:
   }
 });
 
+// ---- Read my change: the coach moved a player; the engine reads the trade ----
+// Whole-board aware — it gets the shape BEFORE and AFTER plus what moved, and
+// returns what the move gained, what it cost, and an overall read. Shares the
+// same daily board cap, ceiling, depth gate and reserve-before-await guards.
+const MOVE_READ_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["gains", "costs", "overall", "verdict"],
+  properties: {
+    gains: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" }, description: "What this change GAINED — concrete, whole-board" },
+    costs: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" }, description: "What this change GAVE UP — concrete, whole-board" },
+    overall: { type: "string", description: "One-line read of the RESULTING shape and the trade" },
+    verdict: { type: "string", enum: ["better", "tradeoff", "risky"] },
+  },
+};
+interface MoveReadOut { gains: string[]; costs: string[]; overall: string; verdict: "better" | "tradeoff" | "risky"; }
+function sanitizeMoveRead(raw: MoveReadOut): MoveReadOut {
+  const strs = (a: unknown, n: number) => (Array.isArray(a) ? a : []).map((s) => String(s).slice(0, 200)).filter((s) => s.length > 3).slice(0, n);
+  const gains = strs(raw?.gains, 4);
+  const costs = strs(raw?.costs, 4);
+  return {
+    gains: gains.length ? gains : ["A connected shape."],
+    costs: costs.length ? costs : ["Watch the space you left behind."],
+    overall: String(raw?.overall ?? "").slice(0, 260) || "A trade — you gained one thing and gave up another.",
+    verdict: (["better", "tradeoff", "risky"] as const).includes(raw?.verdict) ? raw.verdict : "tradeoff",
+  };
+}
+
+api.post("/board/read-move", async (req, res) => {
+  const userId = uid(req);
+  const day = userToday(userId);
+  const capKey = `boardcap:${userId}:${day}`;
+  const cap = BOARD_READS_PER_DAY[planOf(userId)];
+  const { format, formation, scenario, board, previous, moved, opponents, opponent, facts, depth } = req.body ?? {};
+  const rowOk = (p: unknown) => !!p && typeof p === "object";
+  if (!Array.isArray(board) || board.length < 5 || !board.every(rowOk) || !Array.isArray(moved) || moved.length === 0) {
+    res.status(400).json({ error: "Move a player first, then read the change." });
+    return;
+  }
+  const depthTier = depth === "deep" ? "deep" : depth === "standard" ? "standard" : "light";
+  if (depthTier !== "light" && planOf(userId) === "free") {
+    res.status(403).json(upgradeError("Deeper move reads are a Pro feature — free coaches get the Quick read."));
+    return;
+  }
+  if (overComputeCeiling(userId)) {
+    res.status(429).json({ error: CEILING_MSG });
+    return;
+  }
+  const reserved = kvIncrement(capKey);
+  if (reserved > cap) {
+    kvDecrement(capKey);
+    res.status(planOf(userId) === "free" ? 403 : 429).json(
+      planOf(userId) === "free"
+        ? upgradeError(`You've used all ${BOARD_READS_PER_DAY.free} free board reads today — Pro gets ${BOARD_READS_PER_DAY.pro}/day.`)
+        : { error: "Daily engine limit reached — resets tomorrow." },
+    );
+    return;
+  }
+  try {
+    const cur = (board as { label: string; role: string; x: number; y: number }[]).slice(0, 24);
+    const prev = (Array.isArray(previous) ? previous : []).slice(0, 24) as { label: string; x: number; y: number }[];
+    const mv = (moved as { label: string; from?: { x: number; y: number }; x: number; y: number }[]).slice(0, 11);
+    const line = (p: { label: string; x: number; y: number }) => `${String(p.label ?? "?").slice(0, 8)}[${Math.round(Number(p.x) || 0)},${Math.round(Number(p.y) || 0)}]`;
+    const movedTxt = mv.map((m) => `${String(m.label ?? "?").slice(0, 8)}: ${m.from ? `[${Math.round(Number(m.from.x) || 0)},${Math.round(Number(m.from.y) || 0)}]` : "?"} -> [${Math.round(Number(m.x) || 0)},${Math.round(Number(m.y) || 0)}]`).join("; ");
+    const factsTxt = (Array.isArray(facts) ? facts : []).slice(0, 10).map((f) => `- ${String(f).slice(0, 160)}`).join("\n");
+    const out = await generateStructured<MoveReadOut>({
+      tier: depthTier,
+      userId,
+      system: `${baseSystemPrompt()}${teamContext(userId)}
+
+You are TactIQ's board analyst. The coach just MOVED one or more players on the tactics board. Read the TRADE — not a canned per-piece line, but what the change actually gains and costs given the WHOLE board and the opponent.
+Coordinates: 100x100 grid, y=0 is the OPPONENT goal (up = attacking), y=100 our own goal, x=0 the left touchline.
+Rules:
+- gains and costs must be concrete and reference the real picture (who is now free, what space opened, which line is thin, where the ball can go). Name players by label.
+- overall: one line on the RESULTING shape (its structure and the single most important consequence).
+- verdict: "better" if the gain clearly outweighs the cost, "risky" if it opens something dangerous (keeper exposed, no rest defense, a line split, a big gap), else "tradeoff".
+- Judge against mainstream doctrine (pressure-cover-balance, rest defense, staying connected). Be honest — if it breaks the shape, say so.`,
+      user: `Format: ${String(format ?? "").slice(0, 20)}. Our formation: ${String(formation ?? "").slice(0, 40)}.
+${scenario ? `The situation the shape was built for: "${String(scenario).slice(0, 300)}"` : ""}
+${opponent ? `Their game plan: ${String(opponent).slice(0, 300)}` : ""}
+Shape BEFORE the move: ${prev.map(line).join(" ")}
+Shape AFTER the move: ${cur.map(line).join(" ")}
+${(Array.isArray(opponents) ? opponents : []).length ? `Their players on the board: ${(opponents as { label: string; x: number; y: number }[]).slice(0, 15).map(line).join(" ")}` : ""}
+What the coach MOVED: ${movedTxt}
+${factsTxt ? `VERIFIED GEOMETRIC FACTS (from the board — ground truth):\n${factsTxt}` : ""}
+
+Read this change.`,
+      schema: MOVE_READ_SCHEMA as unknown as Record<string, unknown>,
+      maxTokens: 900,
+      mock: {
+        gains: ["Demo read — the live engine weighs this exact move against your whole board and the opposition."],
+        costs: ["Add ANTHROPIC_API_KEY on the server to activate live move reads."],
+        overall: "Demo mode — this is where the engine tells you what the move gained, what it cost, and whether the shape still holds.",
+        verdict: "tradeoff" as const,
+      },
+    });
+    const read = sanitizeMoveRead(out);
+    res.json({ read, readsLeft: Math.max(0, cap - reserved) });
+  } catch (err) {
+    console.error(err);
+    kvDecrement(capKey); // refund — a failed read doesn't count
+    res.status(500).json({ error: "The read failed — nothing was counted against your daily limit. Try again." });
+  }
+});
+
 // ---- The Touchline Debate: weekly dilemma, tap to vote, verdict Saturday ----
 api.get("/debate", (req, res) => {
   res.json(debateState(uid(req)));

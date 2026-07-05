@@ -1090,6 +1090,88 @@ export function geometryFacts(ours: Piece[], opps: Piece[]): string[] {
   return facts.slice(0, 10);
 }
 
+// A whole-board read of a hand-made change: what moving these players GAINED,
+// what it COST, and an overall read of the RESULTING shape. Whole-board aware
+// (it recomputes the shape after the move) so it never gives the context-free
+// per-piece lines the old drag pop-up did. This is the demo fallback for the
+// AI move-read and a validator target; live, the engine does the real read.
+export interface MoveRead {
+  gains: string[];
+  costs: string[];
+  overall: string;
+  verdict: "better" | "tradeoff" | "risky";
+}
+
+const ROLE_WORD: Record<Role, string> = {
+  GK: "keeper", CB: "center back", FB: "fullback", DM: "pivot", CM: "midfielder",
+  AM: "attacking mid", W: "winger", ST: "striker", OPP: "opponent",
+};
+
+export function moveRead(prev: Piece[], cur: Piece[], opps: Piece[] = []): MoveRead {
+  const gains: string[] = [];
+  const costs: string[] = [];
+  const prevById = new Map(prev.map((p) => [p.id, p]));
+  const moved = cur.filter((p) => { const b = prevById.get(p.id); return b && Math.hypot(p.x - b.x, p.y - b.y) > 3; });
+
+  for (const p of moved) {
+    const b = prevById.get(p.id)!;
+    const dy = p.y - b.y; // negative = toward THEIR goal (up the pitch)
+    const dx = p.x - b.x;
+    const word = ROLE_WORD[p.role] ?? "player";
+    if (p.role === "GK" && p.y < 55) {
+      costs.push("Your keeper is off the line — the goal is open, any turnover is a chance against");
+      continue;
+    }
+    if (dy < -8) {
+      if (p.role === "CB") { gains.push("An extra man ahead of the ball to break their first line"); costs.push("Space in behind your back line — someone has to cover the run"); }
+      else if (p.role === "FB") { gains.push("Width and an overlap high — their winger gets pinned back"); costs.push("That flank is open on the counter until a midfielder tucks across"); }
+      else if (p.role === "DM") { gains.push("More bodies around the ball high up the pitch"); costs.push("No screen in front of the back line — their 10 lives in the pocket"); }
+      else if (p.role === "ST" || p.role === "W") { gains.push("Stretches their line and pins their backs deeper"); costs.push("A bigger gap back to midfield — the link play gets harder"); }
+      else { gains.push(`Your ${word} supports higher — more presence in the final third`); costs.push("A longer recovery run when the ball turns over"); }
+    } else if (dy > 8) {
+      gains.push(`A deeper ${word} — more security behind the ball`);
+      if (p.role === "ST") costs.push("No one pinning their line — they step up and squeeze you");
+      else if (p.role === "W") costs.push("You've conceded that wing — their fullback is free to push");
+      else costs.push("One fewer option ahead of the ball in possession");
+    }
+    if (Math.abs(dx) > 12) {
+      const inward = Math.abs(p.x - 50) < Math.abs(b.x - 50);
+      if (inward) { gains.push("An extra body in the central half-space"); costs.push("Width lost on that side — a switch of play will hurt"); }
+      else { gains.push("Real width to stretch their block side to side"); costs.push("Bigger gaps inside for a pass through the lines"); }
+    }
+  }
+
+  // whole-board diagnostics on the resulting shape
+  const field = cur.filter((p) => p.role !== "GK" && p.role !== "OPP");
+  const gk = cur.find((p) => p.role === "GK");
+  const def = field.filter((p) => p.y >= 62).length;
+  const mid = field.filter((p) => p.y >= 38 && p.y < 62).length;
+  const att = field.filter((p) => p.y < 38).length;
+  const structure = `${def}-${mid}-${att}`;
+  if (gk && gk.y < 60 && !costs.some((c) => /keeper/.test(c))) costs.push("Your keeper is upfield — the goal is unguarded");
+  if (att >= 3 && mid <= 1) costs.push(`${att} committed ahead of the ball with ${mid === 0 ? "no one" : "one player"} linking — defense and attack are split`);
+  if (def === 0 && field.length) costs.push("No one is holding the back line — a turnover runs straight at goal");
+  const ys = field.map((p) => p.y).sort((a, b) => a - b);
+  let gap = 0, gapAt = 50;
+  for (let i = 1; i < ys.length; i++) if (ys[i] - ys[i - 1] > gap) { gap = ys[i] - ys[i - 1]; gapAt = (ys[i] + ys[i - 1]) / 2; }
+  if (gap > 30) costs.push(`A ${Math.round(gap)}-unit hole through the ${gapAt < 45 ? "attacking" : gapAt > 60 ? "defensive" : "middle"} third — one pass splits the team`);
+  const meanX = field.length ? field.reduce((s, p) => s + p.x, 0) / field.length : 50;
+  if (Math.abs(meanX - 50) > 16) costs.push(`The shape leans ${meanX < 50 ? "left" : "right"} — the far side is one switch from being wide open`);
+  const isolated = field.filter((p) => Math.min(999, ...field.filter((q) => q.id !== p.id).map((q) => Math.hypot(q.x - p.x, q.y - p.y))) > 34);
+  if (isolated.length) costs.push(`${isolated.map((p) => p.label).join(" + ")} ${isolated.length === 1 ? "is" : "are"} stranded — no teammate within a pass`);
+
+  const g = [...new Set(gains)].slice(0, 3);
+  const c = [...new Set(costs)].slice(0, 3);
+  if (!moved.length) return { gains: [], costs: [], overall: "Nothing has moved from the painted shape — drag a player to see the trade.", verdict: "tradeoff" };
+  if (!g.length && !c.length) g.push("A connected shape — every line within a pass of the next, both flanks honest");
+  const risky = c.some((x) => /keeper|no one|split|straight at goal/.test(x)) || (c.length >= 2 && g.length <= 1);
+  const verdict: MoveRead["verdict"] = risky ? "risky" : g.length && c.length ? "tradeoff" : g.length > c.length ? "better" : "tradeoff";
+  const lead = verdict === "risky" ? `This ${structure} has a problem to fix before anything else`
+    : verdict === "better" ? `A stronger ${structure} — the gain outweighs what you gave up`
+      : `A ${structure} trade — you gained one thing and conceded another`;
+  return { gains: g, costs: c, overall: lead + "." + (opps.length ? " Weigh it against the shirts you placed." : ""), verdict };
+}
+
 // Live shape meters — the FIFA-style bars that move while you drag.
 export function shapeMeters(pieces: Piece[]): { compact: number; width: number; cover: number } {
   const field = pieces.filter((p) => p.role !== "GK");

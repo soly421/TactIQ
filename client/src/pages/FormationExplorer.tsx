@@ -7,8 +7,8 @@ import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
 import {
   FORMATIONS, SCENARIO_BALL, SCENARIOS, applyScenario, geometryFacts, matchupCallouts,
-  resolveCollisions, scenarioFromText, shapeMeters,
-  type MatchupCallout, type Piece, type ScenarioId,
+  moveRead, resolveCollisions, scenarioFromText, shapeMeters,
+  type MatchupCallout, type MoveRead, type Piece, type ScenarioId,
 } from "../formations";
 import type { AwardResult, FormationAnalysis } from "../types";
 
@@ -65,6 +65,10 @@ export function FormationExplorer() {
   const [edits, setEdits] = useState<Map<string, { x: number; y: number }>>(new Map());
   const [ghosts, setGhosts] = useState<Piece[] | null>(null);
   const [boardDirty, setBoardDirty] = useState(false); // dragged since last paint
+
+  // "read my change": the engine reads the trade after the coach moves a player
+  const [moveResult, setMoveResult] = useState<(MoveRead & { demo?: boolean }) | null>(null);
+  const [moveReading, setMoveReading] = useState(false);
 
   // opposition
   const [opponent, setOpponent] = useState("");
@@ -129,6 +133,16 @@ export function FormationExplorer() {
       return t ? { ...p, x: t.x, y: t.y } : { ...p };
     });
   }, [formation, paint, edits, playFrame]);
+
+  // the shape BEFORE the coach's drags — the paint (or base formation). This
+  // is the baseline "read my change" compares the current board against.
+  const basePieces = useMemo(() => {
+    const posByLabel = new Map((paint?.positions ?? []).map((p) => [p.label, p]));
+    return formation.pieces.map((p) => {
+      const t = posByLabel.get(p.label);
+      return t ? { ...p, x: t.x, y: t.y } : { ...p };
+    });
+  }, [formation, paint]);
 
   const shownOpps = useMemo(() => {
     if (playFrame) return oppPieces.map((o) => ({ ...o, ...(playFrame.opp[o.id] ?? {}) }));
@@ -243,7 +257,40 @@ export function FormationExplorer() {
     setEdits(new Map());
     setGhosts(null);
     setBoardDirty(false);
+    setMoveResult(null);
     setError("");
+  }
+
+  // ---- read my change: the engine reads the trade after a manual move ----
+  async function readMyChange() {
+    if (moveReading) return;
+    const moved = pieces.filter((p) => edits.has(p.id));
+    if (!moved.length) return;
+    if (!live) {
+      // DEMO: the deterministic whole-board read stands in, clearly labeled
+      setMoveResult({ ...moveRead(basePieces, pieces, shownOpps), demo: true });
+      return;
+    }
+    setMoveReading(true);
+    try {
+      const baseById = new Map(basePieces.map((p) => [p.id, p]));
+      const r = await sendJSON<{ read: MoveRead; readsLeft: number }>("/api/board/read-move", {
+        format,
+        formation: formation.name,
+        scenario: scenarioText.trim(),
+        board: pieces.map(({ label, role, x, y }) => ({ label, role, x: Math.round(x), y: Math.round(y) })),
+        previous: basePieces.map(({ label, x, y }) => ({ label, x: Math.round(x), y: Math.round(y) })),
+        moved: moved.map((p) => { const b = baseById.get(p.id); return { label: p.label, from: b ? { x: Math.round(b.x), y: Math.round(b.y) } : undefined, x: Math.round(p.x), y: Math.round(p.y) }; }),
+        opponents: shownOpps.map(({ label, x, y }) => ({ label, x: Math.round(x), y: Math.round(y) })),
+        opponent,
+        facts: geometryFacts(pieces, shownOpps),
+        depth,
+      });
+      setMoveResult(r.read);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The read failed");
+    }
+    setMoveReading(false);
   }
 
   function pickFormat(f: "7v7" | "9v9" | "11v11") {
@@ -297,6 +344,7 @@ export function FormationExplorer() {
     stopPlayback();
     setEdits((m) => new Map(m).set(piece.id, { x: piece.x, y: piece.y }));
     setBoardDirty(true);
+    setMoveResult(null); // the previous read is stale the moment the board changes
   }
 
   // ---- the paint ----
@@ -600,10 +648,41 @@ export function FormationExplorer() {
                 </div>
               ))}
               {boardDirty && (
-                <p className="small" style={{ margin: "8px 0 0", color: "var(--gold)", fontWeight: 600 }}>
-                  ✋ You've moved pieces since this was painted — hit <b>🎨 Draw it up</b> to re-read the new picture.
-                </p>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                  <p className="small" style={{ margin: "0 0 8px", color: "var(--gold)", fontWeight: 600 }}>
+                    ✋ You've moved a player. Read the trade, or <b>Draw it up</b> to repaint the whole picture.
+                  </p>
+                  <button className="btn" style={{ fontSize: 12.5 }} disabled={moveReading} onClick={() => void readMyChange()}>
+                    {moveReading ? "Reading the change…" : "🔍 Read my change"}
+                  </button>
+                </div>
               )}
+            </div>
+          )}
+
+          {/* the engine's read of the coach's manual move */}
+          {moveResult && (
+            <div className={`card fade-in move-read move-read-${moveResult.verdict}`}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <h3 style={{ margin: 0 }}>🔍 What that move did</h3>
+                <span className={`verdict-pill verdict-${moveResult.verdict}`}>
+                  {moveResult.verdict === "better" ? "✓ Stronger" : moveResult.verdict === "risky" ? "⚠ Risky" : "⇄ Trade-off"}
+                </span>
+              </div>
+              {moveResult.demo && (
+                <div className="demo-banner" style={{ margin: "8px 0 0" }}>🧪 <b>Demo read</b> — computed from the board geometry. A live engine key reads the move against your full picture and the opposition.</div>
+              )}
+              <p className="small" style={{ margin: "10px 0", lineHeight: 1.5, fontWeight: 600 }}>{moveResult.overall}</p>
+              <div className="mr-cols">
+                <div>
+                  <div className="mr-head mr-gain">✅ Gained</div>
+                  {moveResult.gains.map((g, i) => <div key={i} className="small mr-line">{g}</div>)}
+                </div>
+                <div>
+                  <div className="mr-head mr-cost">⚠️ Gave up</div>
+                  {moveResult.costs.map((c, i) => <div key={i} className="small mr-line">{c}</div>)}
+                </div>
+              </div>
             </div>
           )}
 
