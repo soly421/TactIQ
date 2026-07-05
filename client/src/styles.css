@@ -496,7 +496,34 @@ ul.points li { margin: 4px 0; font-size: 13.5px; line-height: 1.5; }
 .variant-btn.unlocked { border-color: rgba(74,222,128,0.5); color: var(--green); }
 
 /* ---------- formation explorer / tactics board ---------- */
-.tactics-board { width: 100%; aspect-ratio: 1 / 1; border-radius: 12px; display: block; touch-action: none; }
+.tactics-board { width: 100%; aspect-ratio: 152 / 100; border-radius: 10px; display: block; touch-action: none; }
+.board-card { background: linear-gradient(180deg, rgba(20,60,34,0.35), transparent 60%); }
+.board-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.18);
+}
+.board-kit { font-size: 12px; font-weight: 800; }
+.board-kit-home { color: #ff8a8f; }
+.board-kit-away { color: #7ea8ff; }
+.board-shape { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-left: 4px; }
+.board-tool { font-size: 12px !important; padding: 5px 11px !important; }
+.frame-strip {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 8px; padding: 7px 8px; border-radius: 9px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+}
+.frame-chip {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 7px; border-radius: 7px;
+  background: rgba(76,201,240,0.14); border: 1px solid rgba(76,201,240,0.45);
+  color: var(--turquoise); font-weight: 800; font-size: 12.5px;
+}
+.frame-x {
+  margin-left: 5px; background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: 10px; padding: 0; line-height: 1;
+}
+.frame-x:hover { color: var(--red); }
 .explorer-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 920px) { .explorer-grid { grid-template-columns: 1fr; } }
 .meters { display: flex; gap: 14px; flex-wrap: wrap; }

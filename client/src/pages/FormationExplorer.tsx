@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getJSON, sendJSON } from "../api";
 import { formatForAge, NO_FORMATION_NOTE } from "../age";
 import { FormationAnalysisView } from "../components/FormationAnalysisView";
-import { TacticsBoard } from "../components/TacticsBoard";
+import { TacticsBoard, type TacticsBoardHandle } from "../components/TacticsBoard";
 import { useGamify } from "../components/Gamify";
 import { goUpgrade, useEntitlements } from "../entitlements";
 import {
@@ -40,6 +40,13 @@ const EXAMPLE_CHIPS: { label: string; text: string }[] = [
 
 const clampG = (v: number, lo = 3, hi = 97) => Math.min(hi, Math.max(lo, Math.round(v)));
 
+// A frame of a hand-built play: where every kit and the ball sit at one beat.
+interface Frame {
+  own: Record<string, { x: number; y: number }>;
+  opp: Record<string, { x: number; y: number }>;
+  ball: { x: number; y: number } | null;
+}
+
 export function FormationExplorer() {
   const { celebrate } = useGamify();
   const ent = useEntitlements();
@@ -68,6 +75,13 @@ export function FormationExplorer() {
   const [ballPos, setBallPos] = useState<{ x: number; y: number } | null>(null);
   const [playing, setPlaying] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const boardRef = useRef<TacticsBoardHandle>(null);
+
+  // hand-built animated plays: each frame snapshots every kit + the ball, and
+  // Play tweens between them (the board's CSS transitions do the gliding)
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [framePlaying, setFramePlaying] = useState(false);
+  const [playFrame, setPlayFrame] = useState<Frame | null>(null);
 
   // full game-model report (unchanged feature)
   const [report, setReport] = useState<FormationAnalysis | null>(null);
@@ -103,8 +117,10 @@ export function FormationExplorer() {
   const formation = FORMATIONS.find((f) => f.id === formationId) ?? FORMATIONS[0];
   const formationsForFormat = FORMATIONS.filter((f) => f.format === format);
 
-  // current board = base formation, overridden by the paint, overridden by drags
+  // current board = base formation, overridden by the paint, overridden by
+  // drags — and, while a hand-built play is running, by the active frame
   const pieces = useMemo(() => {
+    if (playFrame) return formation.pieces.map((p) => ({ ...p, ...(playFrame.own[p.id] ?? {}) }));
     const posByLabel = new Map((paint?.positions ?? []).map((p) => [p.label, p]));
     return formation.pieces.map((p) => {
       const e = edits.get(p.id);
@@ -112,16 +128,17 @@ export function FormationExplorer() {
       const t = posByLabel.get(p.label);
       return t ? { ...p, x: t.x, y: t.y } : { ...p };
     });
-  }, [formation, paint, edits]);
+  }, [formation, paint, edits, playFrame]);
 
   const shownOpps = useMemo(() => {
+    if (playFrame) return oppPieces.map((o) => ({ ...o, ...(playFrame.opp[o.id] ?? {}) }));
     if (!paint?.opponentPositions?.length) return oppPieces;
     const byLabel = new Map(paint.opponentPositions.map((p) => [p.label, p]));
     return oppPieces.map((o) => {
       const t = byLabel.get(o.label);
       return t ? { ...o, x: t.x, y: t.y } : o;
     });
-  }, [oppPieces, paint]);
+  }, [oppPieces, paint, playFrame]);
 
   const meters = shapeMeters(pieces);
   const boardCallouts: MatchupCallout[] | undefined = useMemo(() => {
@@ -155,6 +172,67 @@ export function FormationExplorer() {
     timers.current = [];
     setPlaying(false);
     setBallPos(null);
+    setFramePlaying(false);
+    setPlayFrame(null);
+  }
+
+  // ---- hand-built animated plays: capture the board, tween between beats ----
+  function captureFrame() {
+    const own: Frame["own"] = {};
+    pieces.forEach((p) => { own[p.id] = { x: Math.round(p.x), y: Math.round(p.y) }; });
+    const opp: Frame["opp"] = {};
+    shownOpps.forEach((o) => { opp[o.id] = { x: Math.round(o.x), y: Math.round(o.y) }; });
+    const ball = (playing ? ballPos : paint?.ballPath?.[0]) ?? null;
+    setFrames((f) => [...f, { own, opp, ball }]);
+  }
+
+  function deleteFrame(i: number) {
+    setFrames((f) => f.filter((_, j) => j !== i));
+  }
+
+  function playFrames() {
+    if (framePlaying) { stopPlayback(); return; }
+    if (frames.length < 2) return;
+    stopPlayback();
+    setFramePlaying(true);
+    const STEP = 1000;
+    const cycle = () => {
+      frames.forEach((fr, i) => {
+        timers.current.push(setTimeout(() => setPlayFrame(fr), i * STEP));
+      });
+      timers.current.push(setTimeout(cycle, frames.length * STEP + 700));
+    };
+    cycle();
+  }
+
+  // ---- export the current board to a PNG the coach can drop in a team chat ----
+  function exportPNG() {
+    const svg = boardRef.current?.svg();
+    if (!svg) return;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    const W = 1216, H = 800; // 8x the 152x100 viewBox
+    clone.setAttribute("width", String(W));
+    clone.setAttribute("height", String(H));
+    const xml = new XMLSerializer().serializeToString(clone);
+    const src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(xml)))}`;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, W, H);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `tactiq-${formation.name.replace(/\s+/g, "")}-${format}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }, "image/png");
+    };
+    img.src = src;
   }
 
   function clearPaint() {
@@ -449,32 +527,56 @@ export function FormationExplorer() {
 
       <div className="explorer-grid">
         <div>
-          <div className="card" style={{ padding: 10 }}>
-            <TacticsBoard
-              pieces={pieces}
-              ghosts={playing ? null : ghosts}
-              onMove={onMove}
-              opponents={shownOpps}
-              onMoveOpp={moveOpp}
-              onRemoveOpp={removeOpp}
-              ball={playing ? ballPos : paint?.ballPath?.[0] ?? null}
-              callouts={boardCallouts}
-              suggestedPath={paint && !playing && paint.ballPath.length >= 2 ? paint.ballPath : undefined}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 }}>
-              <div className="meters">
-                <Meter label="Compact" value={meters.compact} color="var(--turquoise)" />
-                <Meter label="Width" value={meters.width} color="var(--accent)" />
-                <Meter label="Cover" value={meters.cover} color="var(--gold)" />
-              </div>
-              <span style={{ display: "inline-flex", gap: 8 }}>
+          <div className="card board-card" style={{ padding: 0, overflow: "hidden" }}>
+            {/* top toolbar — Home vs Away, playback + export, like a real board */}
+            <div className="board-toolbar">
+              <span className="board-kit board-kit-home">🔴 Us</span>
+              <span className="board-kit board-kit-away">🔵 Them</span>
+              <span className="board-shape">{formation.name} · {format}</span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
                 {paint && paint.ballPath.length >= 2 && (
-                  <button className="btn" style={{ fontSize: 12 }} onClick={playBall}>
-                    {playing ? "◼ Stop" : "▶ Play the ball"}
+                  <button className="btn ghost board-tool" onClick={playBall}>{playing ? "◼ Stop" : "▶ Play ball"}</button>
+                )}
+                <button className="btn ghost board-tool" onClick={exportPNG} title="Download this board as a PNG image">⬇ PNG</button>
+                <button className="btn ghost board-tool" onClick={clearPaint} title="Clear the paint and drags">↺ Reset</button>
+              </span>
+            </div>
+            <div style={{ padding: 10 }}>
+              <TacticsBoard
+                ref={boardRef}
+                pieces={pieces}
+                ghosts={playing || framePlaying ? null : ghosts}
+                onMove={framePlaying ? undefined : onMove}
+                opponents={shownOpps}
+                onMoveOpp={framePlaying ? undefined : moveOpp}
+                onRemoveOpp={removeOpp}
+                ball={framePlaying ? playFrame?.ball ?? null : playing ? ballPos : paint?.ballPath?.[0] ?? null}
+                callouts={playing || framePlaying ? undefined : boardCallouts}
+                suggestedPath={paint && !playing && !framePlaying && paint.ballPath.length >= 2 ? paint.ballPath : undefined}
+              />
+              {/* frame timeline — build an animated play by hand */}
+              <div className="frame-strip">
+                <button className="btn ghost board-tool" onClick={captureFrame} title="Snapshot the current board as a keyframe">＋ Capture frame</button>
+                {frames.map((_, i) => (
+                  <span key={i} className="frame-chip">
+                    {i + 1}
+                    <button className="frame-x" onClick={() => deleteFrame(i)} title="Remove frame">✕</button>
+                  </span>
+                ))}
+                {frames.length >= 2 && (
+                  <button className="btn board-tool" onClick={playFrames} style={{ marginLeft: "auto" }}>
+                    {framePlaying ? "◼ Stop" : `▶ Play (${frames.length})`}
                   </button>
                 )}
-                <button className="btn ghost" style={{ fontSize: 12 }} onClick={clearPaint}>↺ Reset shape</button>
-              </span>
+                {frames.length === 0 && <span className="muted small" style={{ marginLeft: 4 }}>Position players, capture frames, then Play to animate the move.</span>}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+                <div className="meters">
+                  <Meter label="Compact" value={meters.compact} color="var(--turquoise)" />
+                  <Meter label="Width" value={meters.width} color="var(--accent)" />
+                  <Meter label="Cover" value={meters.cover} color="var(--gold)" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
