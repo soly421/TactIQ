@@ -636,6 +636,10 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
   const push = (c: Omit<MatchupCallout, "n">) => {
     if (callouts.length < 5) callouts.push({ n: callouts.length + 1, x: clamp(c.x, 4, 96), y: clamp(c.y, 4, 96), ...{ kind: c.kind, from: c.from, text: c.text } });
   };
+  // Where an attacking move ENDS — a shooting position at the top corner of
+  // their box, deliberately OFF the goal line so the ball route never terminates
+  // on the opponent keeper (which read as "passing to their GK").
+  const FINISH = { x: 43, y: 16 };
   const L = classifyOpp(opps);
   const field = ours.filter((p) => p.role !== "GK");
   const ourGK = ours.find((p) => p.role === "GK") ?? null;
@@ -718,7 +722,7 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
         ballPath.push({ x: trap.x, y: trap.y }, { x: clamp(trap.x), y: clamp(trap.y + 8) });
         const breaker = front.find((p) => !used.has(p.id)) ?? front[0];
         if (breaker) ballPath.push({ x: breaker.x, y: breaker.y });
-        ballPath.push({ x: 50, y: 8 });
+        ballPath.push({ ...FINISH });
       }
       break;
     }
@@ -766,7 +770,7 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
         if (start && start !== wideBack) ballPath.push({ x: start.x, y: start.y });
         ballPath.push({ x: wideBack.x, y: wideBack.y }, { x: receiver.x, y: receiver.y });
         if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
-        ballPath.push({ x: 50, y: 10 });
+        ballPath.push({ ...FINISH });
       }
       break;
     }
@@ -833,7 +837,7 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
       ballPath.push(loss);
       if (escape) ballPath.push({ x: escape.x, y: escape.y }, { x: clamp(escape.x), y: clamp(escape.y - 6) });
       const breaker = front.filter((p) => !used.has(p.id))[0] ?? front[0];
-      if (breaker) ballPath.push({ x: breaker.x, y: breaker.y }, { x: 50, y: 10 });
+      if (breaker) ballPath.push({ x: breaker.x, y: breaker.y }, { ...FINISH });
       break;
     }
 
@@ -920,7 +924,8 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
         if (freeMan) ballPath.push({ x: freeMan.x, y: freeMan.y });
         const target = [...front].sort(byCentral)[0];
         if (target && target !== freeMan) ballPath.push({ x: target.x, y: target.y });
-        ballPath.push({ x: 50, y: 10 });
+        // build-up ENDS the moment the press is beaten (the free man / forward
+        // receiving) — it does NOT sweep on to a shot; that would overstate it.
       }
       break;
     }
@@ -960,7 +965,7 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
       ballPath.push(win);
       if (outlet) ballPath.push({ x: outlet.x, y: outlet.y });
       if (runners[0]) ballPath.push({ x: runners[0].x, y: clamp(runners[0].y - 10) });
-      ballPath.push({ x: 50, y: 8 });
+      ballPath.push({ ...FINISH });
       break;
     }
 
@@ -1005,7 +1010,7 @@ export function matchupCallouts(ours: Piece[], opps: Piece[], scenario: Scenario
       if (carrier) ballPath.push({ x: carrier.x, y: carrier.y }, { x: clamp(carrier.x + 5, 10, 94), y: clamp(carrier.y - 12, 8) });
       if (cutbackMan && deepBlock) ballPath.push({ x: cutbackMan.x, y: cutbackMan.y });
       else if (farPost) ballPath.push({ x: farPost.x, y: farPost.y });
-      ballPath.push({ x: 50, y: 6 });
+      ballPath.push({ ...FINISH });
       break;
     }
 

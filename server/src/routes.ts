@@ -1084,7 +1084,7 @@ Hard rules for the paint:
 - Realistic spacing: no two players within 5 grid units; keep the picture connected (no player more than ~26 from every teammate unless the situation demands a target/outlet).
 - VERIFIED FACTS below were computed geometrically from the actual board — trust them over your own counting, and reference their numbers in your words.
 - callouts name OUR players by label (and by roster name from team memory when natural), in concrete touchline language a youth coach would actually shout. Anchor each callout where the action happens; set fromLabel to the player whose job it is.
-- ballPath tells this plan's story: it STARTS where the ball actually is in the coach's situation (their ball if we're defending — the path then shows where we win it and where it goes), travels, and ends when the plan WORKS.
+- ballPath tells this plan's story: it STARTS where the ball actually is in the coach's situation (their ball if we're defending — the path then shows where we win it and where it goes), travels, and ends when the plan WORKS. Keep it SHORT (3-5 points). NEVER end it on or inside the opponent's goal/keeper (~x50,y5-10) — a defensive plan ends with the ball cleared to our outlet in our half; an attacking plan ends at a shooting position at the edge of their box, not on their keeper. Match the length to the plan: building out ends in midfield once the press is beaten, not at a shot.
 - If you reposition their players, opponentPositions must reuse EXACTLY the opponent labels listed — never invent new ones.
 - headline: the ONE instruction to shout first. rationale: read the whole picture — their threat, our answer, the trade.`,
       user: `Format: ${fmt}. Our formation: ${form}.

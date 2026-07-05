@@ -368,7 +368,7 @@ export function FormationExplorer() {
         ? matchupCallouts(pic, oppPieces, sid)
         : { callouts: [] as MatchupCallout[], ballPath: [] as { x: number; y: number }[] };
       const anchor = SCENARIO_BALL[sid];
-      setGhosts(pieces.map((p) => ({ ...p })));
+      setGhosts(null); // no ghost trails — the kits animate into place; trails were visual clutter
       setEdits(new Map());
       setBoardDirty(false);
       setPaint({
@@ -409,7 +409,7 @@ export function FormationExplorer() {
           return t ? { ...p, x: clampG(t.x), y: clampG(t.y) } : { ...p };
         });
         resolveCollisions(merged);
-        setGhosts(pieces.map((p) => ({ ...p })));
+        setGhosts(null); // no ghost trails — the kits animate into place; trails were visual clutter
         setEdits(new Map());
         setBoardDirty(false);
         setPaint({
