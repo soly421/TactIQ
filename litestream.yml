@@ -1,0 +1,20 @@
+# Litestream — continuous SQLite replication to S3-compatible object storage.
+# Cloudflare R2 is the recommended target (cheap, zero egress fees). Every
+# write to the database is streamed off-site within seconds, giving point-in-
+# time restore on top of Render's persistent disk. Environment variables are
+# expanded at runtime; the container entrypoint only engages Litestream when
+# LITESTREAM_BUCKET is set, so an unconfigured deploy still runs normally.
+dbs:
+  - path: /data/tactiq.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: tactiq
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true
+        # ~3 days of point-in-time restore granularity; a full snapshot every 6h
+        retention: 72h
+        snapshot-interval: 6h

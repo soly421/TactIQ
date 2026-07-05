@@ -30,13 +30,13 @@ services:
       sizeGB: 1
     envVars:
       - key: ANTHROPIC_API_KEY
-        sync: false # set in the Render dashboard
+        sync: false # primary engine. Set BOTH this and OPENAI_API_KEY for real failover.
       - key: OPENAI_API_KEY
-        sync: false # optional second provider (failover)
+        sync: false # failover engine (also powers image/film reads). Set it — with only one key, that provider's outage = downtime.
       - key: PREFERRED_PROVIDER
         value: anthropic
       - key: JWT_SECRET
-        generateValue: true
+        generateValue: true # generated once, kept stable. The server refuses to boot in production without it.
       - key: DATABASE_PATH
         value: /data/tactiq.db
       - key: STRIPE_SECRET_KEY
@@ -65,5 +65,16 @@ services:
         sync: false # optional: est. $/day of compute per free coach before a friendly cooldown (default 1)
       - key: COST_CEILING_PRO
         sync: false # optional: est. $/day of compute per pro coach before a friendly cooldown (default 5)
+      # --- Off-site backups (Litestream → Cloudflare R2). Leave unset to run on the disk alone. ---
+      - key: LITESTREAM_BUCKET
+        sync: false # R2 bucket name for continuous DB backup
+      - key: LITESTREAM_ENDPOINT
+        sync: false # e.g. https://<account-id>.r2.cloudflarestorage.com
+      - key: LITESTREAM_REGION
+        value: auto
+      - key: LITESTREAM_ACCESS_KEY_ID
+        sync: false # R2 API token access key id
+      - key: LITESTREAM_SECRET_ACCESS_KEY
+        sync: false # R2 API token secret
       - key: PORT
         value: "8787"
